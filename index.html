@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mis Finanzas</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1>💰 Mis Finanzas</h1>
+    <div class="month-picker">
+      <label for="monthInput">Mes</label>
+      <input type="month" id="monthInput">
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="dashboard">Resumen</button>
+    <button class="tab-btn" data-tab="ingresos">Ingresos</button>
+    <button class="tab-btn" data-tab="gastos">Gastos</button>
+    <button class="tab-btn" data-tab="tarjetas">Tarjetas</button>
+    <button class="tab-btn" data-tab="fijas">Cuentas Fijas</button>
+  </nav>
+
+  <main>
+    <!-- DASHBOARD -->
+    <section id="tab-dashboard" class="tab-panel active">
+      <div class="cards-row">
+        <div class="stat-card income">
+          <span class="stat-label">Ingresos del mes</span>
+          <span class="stat-value" id="statIncome">$0</span>
+        </div>
+        <div class="stat-card expense">
+          <span class="stat-label">Gastos del mes</span>
+          <span class="stat-value" id="statExpense">$0</span>
+        </div>
+        <div class="stat-card balance">
+          <span class="stat-label">Saldo</span>
+          <span class="stat-value" id="statBalance">$0</span>
+        </div>
+      </div>
+
+      <div class="breakdown">
+        <h2>Detalle de gastos del mes</h2>
+        <div class="breakdown-row"><span>Gastos variables</span><span id="bdVariable">$0</span></div>
+        <div class="breakdown-row"><span>Cuentas fijas</span><span id="bdFixed">$0</span></div>
+        <div class="breakdown-row"><span>Cuotas de tarjetas</span><span id="bdCuotas">$0</span></div>
+      </div>
+
+      <div class="upcoming">
+        <h2>Próximos vencimientos del mes</h2>
+        <ul id="upcomingList" class="list"></ul>
+      </div>
+    </section>
+
+    <!-- INGRESOS -->
+    <section id="tab-ingresos" class="tab-panel">
+      <form id="formIngreso" class="inline-form">
+        <input type="text" id="ingresoDesc" placeholder="Descripción (ej: Sueldo)" required>
+        <input type="number" id="ingresoMonto" placeholder="Monto" min="0" step="0.01" required>
+        <input type="date" id="ingresoFecha" required>
+        <label class="checkbox-label"><input type="checkbox" id="ingresoRecurrente"> Recurrente (todos los meses)</label>
+        <button type="submit">Agregar</button>
+      </form>
+      <ul id="listaIngresos" class="list"></ul>
+    </section>
+
+    <!-- GASTOS -->
+    <section id="tab-gastos" class="tab-panel">
+      <form id="formGasto" class="inline-form">
+        <input type="text" id="gastoDesc" placeholder="Descripción (ej: Supermercado)" required>
+        <input type="number" id="gastoMonto" placeholder="Monto" min="0" step="0.01" required>
+        <input type="date" id="gastoFecha" required>
+        <select id="gastoCategoria">
+          <option value="Comida">Comida</option>
+          <option value="Transporte">Transporte</option>
+          <option value="Ocio">Ocio</option>
+          <option value="Salud">Salud</option>
+          <option value="Otros">Otros</option>
+        </select>
+        <button type="submit">Agregar</button>
+      </form>
+      <ul id="listaGastos" class="list"></ul>
+    </section>
+
+    <!-- TARJETAS -->
+    <section id="tab-tarjetas" class="tab-panel">
+      <h2>Mis tarjetas</h2>
+      <form id="formTarjeta" class="inline-form">
+        <input type="text" id="tarjetaNombre" placeholder="Nombre (ej: Visa Banco X)" required>
+        <input type="number" id="tarjetaLimite" placeholder="Límite (opcional)" min="0" step="0.01">
+        <input type="number" id="tarjetaCierre" placeholder="Día de cierre" min="1" max="31">
+        <input type="number" id="tarjetaVencimiento" placeholder="Día de vencimiento" min="1" max="31">
+        <button type="submit">Agregar tarjeta</button>
+      </form>
+      <ul id="listaTarjetas" class="list"></ul>
+
+      <h2>Compras en cuotas</h2>
+      <form id="formCuota" class="inline-form">
+        <select id="cuotaTarjeta" required></select>
+        <input type="text" id="cuotaDesc" placeholder="Descripción (ej: Notebook)" required>
+        <input type="number" id="cuotaMontoTotal" placeholder="Monto total" min="0" step="0.01" required>
+        <input type="number" id="cuotaCantidad" placeholder="Cantidad de cuotas" min="1" step="1" required>
+        <input type="month" id="cuotaInicio" required>
+        <button type="submit">Agregar compra</button>
+      </form>
+      <ul id="listaCuotas" class="list"></ul>
+    </section>
+
+    <!-- CUENTAS FIJAS -->
+    <section id="tab-fijas" class="tab-panel">
+      <form id="formFija" class="inline-form">
+        <input type="text" id="fijaDesc" placeholder="Descripción (ej: Alquiler, Luz, Internet)" required>
+        <input type="number" id="fijaMonto" placeholder="Monto" min="0" step="0.01" required>
+        <input type="number" id="fijaDia" placeholder="Día de vencimiento" min="1" max="31" required>
+        <button type="submit">Agregar</button>
+      </form>
+      <ul id="listaFijas" class="list"></ul>
+    </section>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
