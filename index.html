@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maldonado Oportunidades — Control de Entradas y Gastos</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <h1>Maldonado Oportunidades</h1>
+      <p class="subtitle">Control de Entradas y Gastos</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="summary-cards" id="summaryCards">
+      <div class="card card-income">
+        <span class="card-label">Total Entradas</span>
+        <span class="card-value" id="totalIngresos">$0.00</span>
+      </div>
+      <div class="card card-expense">
+        <span class="card-label">Total Gastos</span>
+        <span class="card-value" id="totalGastos">$0.00</span>
+      </div>
+      <div class="card card-balance">
+        <span class="card-label">Balance</span>
+        <span class="card-value" id="totalBalance">$0.00</span>
+      </div>
+    </section>
+
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="nueva">Nueva Transacción</button>
+      <button class="tab-btn" data-tab="historial">Historial</button>
+      <button class="tab-btn" data-tab="resumen">Resumen Mensual</button>
+    </nav>
+
+    <section id="tab-nueva" class="tab-panel active">
+      <form id="transactionForm" class="form-grid">
+        <div class="field">
+          <label for="tipo">Tipo</label>
+          <select id="tipo" required>
+            <option value="ingreso">Entrada</option>
+            <option value="gasto">Gasto</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="fecha">Fecha</label>
+          <input type="date" id="fecha" required>
+        </div>
+
+        <div class="field">
+          <label for="categoria">Categoría</label>
+          <select id="categoria" required></select>
+        </div>
+
+        <div class="field">
+          <label for="monto">Monto</label>
+          <input type="number" id="monto" min="0" step="0.01" placeholder="0.00" required>
+        </div>
+
+        <div class="field field-wide">
+          <label for="descripcion">Descripción</label>
+          <input type="text" id="descripcion" placeholder="Detalle de la transacción" maxlength="200">
+        </div>
+
+        <div class="field field-actions">
+          <button type="submit" class="btn btn-primary" id="submitBtn">Agregar</button>
+          <button type="button" class="btn btn-secondary" id="cancelEditBtn" hidden>Cancelar edición</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="tab-historial" class="tab-panel">
+      <div class="filters">
+        <div class="field">
+          <label for="filterTipo">Tipo</label>
+          <select id="filterTipo">
+            <option value="">Todos</option>
+            <option value="ingreso">Entradas</option>
+            <option value="gasto">Gastos</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="filterCategoria">Categoría</label>
+          <select id="filterCategoria">
+            <option value="">Todas</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="filterMes">Mes</label>
+          <input type="month" id="filterMes">
+        </div>
+        <div class="field field-wide">
+          <label for="filterTexto">Buscar</label>
+          <input type="text" id="filterTexto" placeholder="Buscar en descripción...">
+        </div>
+        <div class="field field-actions">
+          <button type="button" class="btn btn-secondary" id="clearFiltersBtn">Limpiar filtros</button>
+          <button type="button" class="btn btn-secondary" id="exportCsvBtn">Exportar CSV</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table id="transactionsTable">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Tipo</th>
+              <th>Categoría</th>
+              <th>Descripción</th>
+              <th class="col-amount">Monto</th>
+              <th class="col-actions">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="transactionsBody"></tbody>
+        </table>
+        <p id="emptyState" class="empty-state" hidden>No hay transacciones registradas todavía.</p>
+      </div>
+    </section>
+
+    <section id="tab-resumen" class="tab-panel">
+      <div id="monthlySummary" class="monthly-summary"></div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>Los datos se guardan localmente en este navegador.</p>
+  </footer>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
