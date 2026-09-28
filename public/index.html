@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{{SITE_NAME}} — Empleos, alquileres y avisos en Maldonado</title>
+    <meta name="description" content="{{SITE_TAGLINE}}" />
+    <meta name="theme-color" content="#0b6e8a" />
+    <meta property="og:title" content="{{SITE_NAME}}" />
+    <meta property="og:description" content="{{SITE_TAGLINE}}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="{{BASE_URL}}/" />
+    <link rel="icon" href="/img/icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <!--ADSENSE_HEAD-->
+  </head>
+  <body>
+    <a class="skip" href="#main">Saltar al contenido</a>
+    <header class="site-header">
+      <div class="wrap header-row">
+        <a class="brand" href="#/" aria-label="Inicio">
+          <img src="/img/icon.svg" alt="" width="36" height="36" />
+          <span class="brand-text"><strong>Maldonado</strong> Oportunidades</span>
+        </a>
+        <nav class="header-actions" aria-label="Acciones">
+          <a class="btn btn-ghost" href="#/alertas" title="Configurar alertas">🔔 <span class="hide-sm">Alertas</span></a>
+          <a class="btn btn-primary" href="#/publicar">＋ <span>Publicar</span></a>
+        </nav>
+      </div>
+      <nav class="tabs" aria-label="Secciones">
+        <div class="wrap tabs-row" id="tabs" role="tablist"></div>
+      </nav>
+    </header>
+
+    <main id="main" class="wrap">
+      <div id="ad-top" class="ad-slot ad-top" hidden></div>
+      <div id="view"></div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-row">
+        <div>
+          <strong>{{SITE_NAME}}</strong>
+          <p class="muted">{{SITE_TAGLINE}}</p>
+        </div>
+        <nav aria-label="Pie de página">
+          <a href="#/publicar">Publicar un aviso</a>
+          <a href="#/alertas">Alertas por email</a>
+          <a href="#/privacidad">Privacidad y cookies</a>
+          <a href="#/terminos">Condiciones de uso</a>
+        </nav>
+      </div>
+    </footer>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script src="/js/app.js" defer></script>
+  </body>
+</html>
