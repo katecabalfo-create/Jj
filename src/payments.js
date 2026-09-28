@@ -14,7 +14,7 @@ function availableMethods(db) {
   const s = getSettings(db);
   const m = [];
   if (mpConfigured()) m.push('mercadopago');
-  if (s.payments_transfer_enabled === '1') m.push('transfer');
+  if (s.payments_transfer_enabled === '1' && (s.transfer_account_uyu || s.transfer_account_usd)) m.push('transfer');
   if (demoEnabled()) m.push('demo');
   return m;
 }
@@ -87,11 +87,31 @@ function applyPayment(db, paymentId, { providerPaymentId = '', note = '' } = {},
   return true;
 }
 
+/** Datos de la cuenta bancaria para transferir en una moneda (null si no hay cuenta en esa moneda). */
+function transferDetails(db, currency) {
+  const s = getSettings(db);
+  const account = currency === 'USD' ? s.transfer_account_usd : s.transfer_account_uyu;
+  if (!account) return null;
+  return {
+    bank: s.transfer_bank || 'Itaú',
+    accountType: s.transfer_account_type,
+    currency,
+    account,
+    branch: s.transfer_branch,
+    holder: s.transfer_holder,
+    holderDoc: s.transfer_holder_doc,
+    instructions: s.bank_transfer_info,
+  };
+}
+
 /** Crea el pago y, si corresponde, la preferencia de Mercado Pago. */
 async function createCheckout(db, { user, listing, plan, method, baseUrl }) {
   const free = Number(plan.price) === 0;
   const m = free ? 'free' : method;
   if (!free && !availableMethods(db).includes(m)) throw Object.assign(new Error('Medio de pago no disponible'), { status: 400 });
+  if (m === 'transfer' && !transferDetails(db, plan.currency)) {
+    throw Object.assign(new Error(`No hay una cuenta para transferencias en ${plan.currency === 'USD' ? 'dólares' : 'pesos'}. Elegí otro medio de pago.`), { status: 400 });
+  }
 
   const description = `${plan.name} — ${listing.title}`.slice(0, 250);
   const id = Number(
@@ -187,6 +207,6 @@ function verifyMpSignature(req, dataId) {
 }
 
 module.exports = {
-  mpConfigured, demoEnabled, availableMethods, applyPayment, createCheckout, handleMpPayment,
+  mpConfigured, demoEnabled, availableMethods, transferDetails, applyPayment, createCheckout, handleMpPayment,
   fetchMpPayment, syncPayment, verifyMpSignature, addDays,
 };

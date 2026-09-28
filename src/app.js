@@ -38,6 +38,7 @@ function rateLimiter(max, windowMs) {
 
 function createApp(db, options = {}) {
   const uploadDir = options.uploadDir || path.join(__dirname, '..', 'uploads');
+  const receiptDir = options.receiptDir || process.env.RECEIPTS_DIR || path.join(__dirname, '..', 'data', 'receipts');
   fs.mkdirSync(uploadDir, { recursive: true });
 
   const app = express();
@@ -242,7 +243,7 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
   });
 
   // ---------- Cuentas de anunciantes ----------
-  app.use('/api/account', createAccountRouter(db, { handleUpload, baseUrl, rateLimiter }));
+  app.use('/api/account', createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDir }));
 
   // ---------- Webhook de Mercado Pago ----------
   app.post('/api/payments/mercadopago/webhook', async (req, res) => {
@@ -387,6 +388,8 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
     res.json({
       byStatus, byCategory, views, subs, outbox, last7, smtp: smtpConfigured(), users, revenue, revenue30,
       pendingTransfers, unpaid, pendingReady, mercadopago: payments.mpConfigured(), demo: payments.demoEnabled(),
+      transferReady: payments.availableMethods(db).includes('transfer'),
+      receiptsToReview: db.prepare("SELECT COUNT(*) n FROM payments WHERE status = 'pending' AND method = 'transfer' AND receipt_file <> ''").get().n,
     });
   });
 
@@ -573,6 +576,11 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
       .prepare("UPDATE payments SET status = 'rejected', note = ? WHERE id = ? AND status = 'pending'")
       .run(String(req.body?.note || 'Rechazado por el administrador').slice(0, 300), Number(req.params.id));
     res.json({ ok: r.changes > 0 });
+  });
+  admin.get('/payments/:id/receipt', (req, res) => {
+    const pay = db.prepare('SELECT receipt_file FROM payments WHERE id = ?').get(Number(req.params.id));
+    if (!pay || !pay.receipt_file) return res.status(404).json({ error: 'Sin comprobante' });
+    res.sendFile(path.join(receiptDir, pay.receipt_file), { headers: { 'Cache-Control': 'private, no-store' } });
   });
   admin.post('/payments/:id/sync', async (req, res) => {
     const pay = db.prepare('SELECT * FROM payments WHERE id = ?').get(Number(req.params.id));

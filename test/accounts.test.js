@@ -83,10 +83,11 @@ let db;
 test.before(async () => {
   await new Promise((r) => mp.listen(0, r));
   process.env.MP_API_URL = `http://127.0.0.1:${mp.address().port}`;
-  const { openDb } = require('../src/db');
+  const { openDb, setSettings } = require('../src/db');
   const { createApp } = require('../src/app');
   db = openDb(':memory:');
-  const app = createApp(db, { uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'mo-up-')) });
+  const app = createApp(db, { uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'mo-up-')), receiptDir: fs.mkdtempSync(path.join(os.tmpdir(), 'mo-rc-')) });
+  setSettings(db, { transfer_account_uyu: '1234567', transfer_holder: 'Maldonado Oportunidades', transfer_holder_doc: '210000000011' });
   await new Promise((r) => (server = app.listen(0, r)));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -140,14 +141,34 @@ test('empresa: aviso sin pagar no se publica; transferencia confirmada por admin
   assert.equal(pay.status, 201);
   assert.equal(pay.json.status, 'pending');
 
+  // Datos de Itaú y comprobante
+  const detail = await req('GET', `/api/account/payments/${pay.json.id}`);
+  assert.equal(detail.json.transfer.bank, 'Itaú');
+  assert.equal(detail.json.transfer.account, '1234567');
+  assert.equal(detail.json.has_receipt, false);
+  const badFile = new FormData();
+  badFile.set('receipt', new Blob(['hola'], { type: 'text/plain' }), 'x.txt');
+  assert.equal((await req('POST', `/api/account/payments/${pay.json.id}/receipt`, badFile)).status, 400);
+  const rc = new FormData();
+  rc.set('receipt', new Blob(['%PDF-1.4 comprobante'], { type: 'application/pdf' }), 'comprobante.pdf');
+  rc.set('payer_note', 'Operación 998877');
+  const up = await req('POST', `/api/account/payments/${pay.json.id}/receipt`, rc);
+  assert.equal(up.status, 200);
+  assert.equal(up.json.has_receipt, true);
+  assert.equal(up.json.receipt_file, undefined, 'no expone el nombre del archivo');
+  assert.equal((await req('GET', `/api/account/payments/${pay.json.id}/receipt`)).status, 200);
+  assert.equal((await client()('GET', `/api/admin/payments/${pay.json.id}/receipt`)).status, 401);
+
   // Otra empresa no puede ver ni pagar ese aviso
   const other = client();
   await other('POST', '/api/account/register', { type: 'empresa', name: 'Otro', business_name: 'Otra SA', email: 'otro@empresa.com', password: 'clave1234', accept_terms: true });
   assert.equal((await other('GET', `/api/account/listings/${id}`)).status, 404);
   assert.equal((await other('GET', `/api/account/payments/${pay.json.id}`)).status, 404);
+  assert.equal((await other('GET', `/api/account/payments/${pay.json.id}/receipt`)).status, 404);
 
   const admin = client();
   await admin('POST', '/api/admin/login', { password: 'secreto' });
+  assert.equal((await admin('GET', `/api/admin/payments/${pay.json.id}/receipt`)).status, 200);
   const ok = await admin('POST', `/api/admin/payments/${pay.json.id}/approve`, {});
   assert.equal(ok.json.ok, true);
   const again = await admin('POST', `/api/admin/payments/${pay.json.id}/approve`, {});
@@ -215,6 +236,18 @@ test('modo demo y renovación suman días', async () => {
   assert.equal(l.expires_at, expected);
   const adv = await client()('GET', `/api/advertisers/${created.json.user_id}`);
   assert.equal(adv.json.listings.total, 1);
+});
+
+test('transferencia no disponible en una moneda sin cuenta cargada', async () => {
+  const req = client();
+  await req('POST', '/api/account/register', { type: 'alquileres', name: 'Mario', email: 'mario@example.com', password: 'clave1234', accept_terms: true });
+  const created = await req('POST', '/api/account/listings', listingForm({ category: 'alquileres', title: 'Apartamento en Piriápolis' }));
+  const admin = client();
+  await admin('POST', '/api/admin/login', { password: 'secreto' });
+  const plan = await admin('POST', '/api/admin/plans', { account_type: 'alquileres', name: 'Plan en dólares', price: 20, currency: 'USD', duration_days: 30 });
+  const r = await req('POST', `/api/account/listings/${created.json.id}/checkout`, { plan_id: plan.json.id, method: 'transfer' });
+  assert.equal(r.status, 400);
+  assert.match(r.json.error, /dólares/);
 });
 
 test('publicar sin cuenta está desactivado por defecto', async () => {

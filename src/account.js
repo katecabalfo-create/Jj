@@ -2,7 +2,9 @@
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const path = require('node:path');
 const express = require('express');
+const multer = require('multer');
 
 const { ACCOUNT_TYPE_IDS, getAccountType, getCategory } = require('./categories');
 const { getSettings } = require('./db');
@@ -35,9 +37,11 @@ function publicUser(u) {
 }
 
 function publicPayment(p) {
-  const { user_id, provider_ref, ...rest } = p; // eslint-disable-line no-unused-vars
-  return rest;
+  const { user_id, provider_ref, receipt_file, ...rest } = p; // eslint-disable-line no-unused-vars
+  return { ...rest, has_receipt: Boolean(receipt_file) };
 }
+
+const RECEIPT_TYPES = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'application/pdf': '.pdf' };
 
 function validateProfile(body, { partial = false } = {}) {
   const errors = {};
@@ -57,8 +61,18 @@ function validateProfile(body, { partial = false } = {}) {
   return { data, errors };
 }
 
-function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter }) {
+function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDir }) {
   const r = express.Router();
+  fs.mkdirSync(receiptDir, { recursive: true });
+  // Los comprobantes contienen datos bancarios: se guardan fuera de la carpeta pública.
+  const receiptUpload = multer({
+    storage: multer.diskStorage({
+      destination: receiptDir,
+      filename: (req, file, cb) => cb(null, `pago-${req.params.id}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}${RECEIPT_TYPES[file.mimetype]}`),
+    }),
+    limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+    fileFilter: (req, file, cb) => (RECEIPT_TYPES[file.mimetype] ? cb(null, true) : cb(new Error('El comprobante debe ser una imagen (JPG, PNG, WEBP) o un PDF.'))),
+  });
   const needUser = auth.requireUser(db);
 
   // ---------- Registro y sesión ----------
@@ -244,7 +258,7 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter }) {
     res.json({
       plans: db.prepare('SELECT * FROM plans WHERE account_type = ? AND active = 1 ORDER BY sort, price').all(req.user.type),
       methods: payments.availableMethods(db),
-      transferInfo: getSettings(db).bank_transfer_info,
+      transfer: { UYU: payments.transferDetails(db, 'UYU'), USD: payments.transferDetails(db, 'USD') },
     });
   });
 
@@ -275,7 +289,37 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter }) {
     if (!pay) return res.status(404).json({ error: 'Pago no encontrado' });
     pay = await payments.syncPayment(db, pay, baseUrl(req));
     const listing = pay.listing_id ? db.prepare('SELECT id, title, status, expires_at, payment_status FROM listings WHERE id = ?').get(pay.listing_id) : null;
-    res.json({ ...publicPayment(pay), listing, transferInfo: pay.method === 'transfer' ? getSettings(db).bank_transfer_info : undefined });
+    res.json({ ...publicPayment(pay), listing, transfer: pay.method === 'transfer' ? payments.transferDetails(db, pay.currency) : undefined });
+  });
+
+  // El anunciante sube el comprobante de la transferencia.
+  r.post('/payments/:id/receipt', needUser, rateLimiter(20, 60 * 60 * 1000), (req, res, next) => {
+    const pay = db.prepare('SELECT * FROM payments WHERE id = ? AND user_id = ?').get(Number(req.params.id), req.user.id);
+    if (!pay) return res.status(404).json({ error: 'Pago no encontrado' });
+    if (pay.method !== 'transfer' || pay.status !== 'pending') return res.status(400).json({ error: 'Este pago no admite comprobante.' });
+    receiptUpload.single('receipt')(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'El archivo supera los 8 MB.' : err.message });
+      if (!req.file) return res.status(400).json({ error: 'Adjuntá el comprobante.' });
+      try {
+        if (pay.receipt_file) fs.rm(path.join(receiptDir, pay.receipt_file), () => {});
+        db.prepare("UPDATE payments SET receipt_file = ?, receipt_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), payer_note = ? WHERE id = ?").run(
+          req.file.filename, String(req.body?.payer_note || '').slice(0, 300), pay.id,
+        );
+        const s = getSettings(db);
+        if (s.contact_email) {
+          enqueueEmail(db, s.contact_email, `Comprobante recibido: pago #${pay.id}`, `${req.user.business_name || req.user.name} (${req.user.email}) subió el comprobante de ${pay.currency === 'USD' ? 'US$' : '$'} ${pay.amount}.\nRevisalo y confirmalo: ${baseUrl(req)}/admin/#/pagos?status=pending&method=transfer`);
+        }
+        res.json(publicPayment(db.prepare('SELECT * FROM payments WHERE id = ?').get(pay.id)));
+      } catch (e) {
+        next(e);
+      }
+    });
+  });
+
+  r.get('/payments/:id/receipt', needUser, (req, res) => {
+    const pay = db.prepare('SELECT receipt_file FROM payments WHERE id = ? AND user_id = ?').get(Number(req.params.id), req.user.id);
+    if (!pay || !pay.receipt_file) return res.status(404).json({ error: 'Sin comprobante' });
+    res.sendFile(path.join(receiptDir, pay.receipt_file), { headers: { 'Cache-Control': 'private, no-store' } });
   });
 
   r.post('/payments/:id/cancel', needUser, (req, res) => {

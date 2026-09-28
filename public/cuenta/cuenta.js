@@ -13,7 +13,7 @@
 
   const METHOD_LABEL = {
     mercadopago: '💳 Mercado Pago (tarjeta de crédito/débito, Abitab, Redpagos)',
-    transfer: '🏦 Transferencia bancaria',
+    transfer: '🏦 Transferencia bancaria Itaú (desde Itaú o cualquier banco)',
     demo: '🧪 Pago de prueba (modo demo)',
     free: 'Gratis',
   };
@@ -459,11 +459,25 @@
             )
             .join('')}</div>
           ${allFree ? '' : `<h2 style="margin-top:18px">Medio de pago</h2>
-          <div class="methods">${p.methods.length ? p.methods.map((m, i) => `<label class="method"><input type="radio" name="method" value="${m}" ${i === 0 ? 'checked' : ''}> ${METHOD_LABEL[m]}</label>`).join('') : '<div class="notice warn">No hay medios de pago configurados todavía. Contactanos.</div>'}</div>`}
+          <div class="methods">${p.methods.length ? p.methods.map((m, i) => `<label class="method" data-method="${m}"><input type="radio" name="method" value="${m}" ${i === 0 ? 'checked' : ''}> <span>${m === 'transfer' ? esc(METHOD_LABEL.transfer.replace('Itaú', (p.transfer.UYU || p.transfer.USD || {}).bank || 'Itaú')) : METHOD_LABEL[m]}</span></label>`).join('') : '<div class="notice warn">No hay medios de pago configurados todavía. Contactanos.</div>'}</div>`}
           <button class="btn btn-primary" style="width:100%" ${!allFree && !p.methods.length ? 'disabled' : ''}>Continuar</button>
         </form>
         <p class="muted" style="font-size:.85rem;text-align:center">Los pagos con tarjeta se procesan en el sitio seguro de Mercado Pago. No guardamos datos de tarjetas.</p>
       </div>`;
+    // La transferencia solo se ofrece si hay cuenta en la moneda del plan elegido.
+    const syncMethods = () => {
+      const plan = p.plans.find((x) => String(x.id) === new FormData($('#pay')).get('plan_id'));
+      const tr = $('[data-method="transfer"]');
+      if (!tr || !plan) return;
+      const ok = Boolean(p.transfer[plan.currency]);
+      tr.hidden = !ok;
+      if (!ok && tr.querySelector('input').checked) {
+        const other = $('.method:not([hidden]) input');
+        if (other) other.checked = true;
+      }
+    };
+    $$('input[name="plan_id"]').forEach((r) => r.addEventListener('change', syncMethods));
+    syncMethods();
     $('#pay').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
@@ -492,7 +506,7 @@
       ${rows
         .map(
           (p) => `<tr><td><a href="#/pagos/${p.id}">${p.id}</a></td><td>${esc(p.description)}</td><td style="white-space:nowrap">${money(p.amount, p.currency)}</td>
-          <td>${esc((METHOD_LABEL[p.method] || p.method).split(' (')[0])}</td><td><span class="badge ${PAY_BADGE[p.status]}">${PAY_STATUS[p.status]}</span></td><td style="white-space:nowrap">${fmtDate(p.created_at)}</td></tr>`,
+          <td>${esc((METHOD_LABEL[p.method] || p.method).split(' (')[0])}</td><td><span class="badge ${PAY_BADGE[p.status]}">${PAY_STATUS[p.status]}</span>${p.method === 'transfer' && p.status === 'pending' ? `<div style="font-size:.8rem">${p.has_receipt ? '📎 Comprobante enviado' : `<a href="#/pagos/${p.id}">Subir comprobante</a>`}</div>` : ''}</td><td style="white-space:nowrap">${fmtDate(p.created_at)}</td></tr>`,
         )
         .join('')}</tbody></table></div>` : '<div class="empty"><p>Todavía no hiciste pagos.</p></div>'}`;
   }
@@ -507,11 +521,32 @@
         <p>${p.listing ? (p.listing.status === 'approved' ? `Tu aviso está publicado hasta el ${fmtDate((p.listing.expires_at || '').slice(0, 10))}.` : 'Tu aviso quedó en revisión y se publicará en breve.') : ''}</p>
         <p style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${p.listing && p.listing.status === 'approved' ? `<a class="btn btn-primary" href="/#/aviso/${p.listing.id}" target="_blank">Ver mi aviso</a>` : ''}<a class="btn" href="#/avisos">Mis avisos</a></p>`;
     } else if (p.status === 'pending' && p.method === 'transfer') {
-      body = `<div class="big">🏦</div><h1>Pago por transferencia #${p.id}</h1>
-        <p>Transferí <strong>${money(p.amount, p.currency)}</strong> a la siguiente cuenta, indicando la referencia <strong>#${p.id}</strong>:</p>
-        <div class="transfer-box" style="text-align:left">${esc(p.transferInfo || '')}</div>
-        <p class="muted">Cuando confirmemos la transferencia, tu aviso se publica automáticamente y te avisamos por email.</p>
-        <p><button class="btn btn-danger btn-sm" id="cancel-pay">Cancelar este pago</button> <a class="btn btn-sm" href="#/avisos">Mis avisos</a></p>`;
+      const t = p.transfer || {};
+      const row = (label, value, copy) =>
+        value ? `<div class="bank-row"><span>${label}</span><strong>${esc(value)}</strong>${copy ? `<button type="button" class="btn btn-sm" data-copy="${esc(copy)}">Copiar</button>` : ''}</div>` : '';
+      body = `<div class="big">🏦</div><h1>Transferencia a ${esc(t.bank || 'Itaú')}</h1>
+        <p>Transferí el monto exacto desde tu app o home banking (Itaú u otro banco) y subí el comprobante.</p>
+        <div class="bank-card">
+          <div class="bank-head">${esc(t.bank || 'Itaú')}<small>${esc(t.accountType || '')} en ${t.currency === 'USD' ? 'dólares' : 'pesos'}</small></div>
+          ${row('Monto', money(p.amount, p.currency), String(p.amount))}
+          ${row('N.º de cuenta', t.account, t.account)}
+          ${row('Sucursal', t.branch)}
+          ${row('Titular', t.holder, t.holder)}
+          ${row('RUT / CI', t.holderDoc, t.holderDoc)}
+          ${row('Concepto / referencia', `Pago ${p.id}`, `Pago ${p.id}`)}
+        </div>
+        ${t.instructions ? `<p class="muted" style="white-space:pre-wrap">${esc(t.instructions)}</p>` : ''}
+        ${p.has_receipt
+          ? `<div class="notice">📎 Recibimos tu comprobante${p.receipt_at ? ` el ${fmtDate(p.receipt_at)}` : ''}. Lo estamos verificando: cuando lo confirmemos tu aviso se publica solo y te avisamos por email.
+              <div style="margin-top:8px"><a href="/api/account/payments/${p.id}/receipt" target="_blank">Ver comprobante enviado</a> · <a href="#" id="replace-receipt">Reemplazar</a></div></div>`
+          : ''}
+        <form id="receipt-form" class="panel" style="text-align:left;margin-top:12px" ${p.has_receipt ? 'hidden' : ''}>
+          <h2 style="font-size:1.05rem">📎 Subí el comprobante</h2>
+          <div class="field"><label for="rc-file">Captura o PDF de la transferencia <small>(máx. 8 MB)</small></label><input id="rc-file" type="file" name="receipt" accept="image/jpeg,image/png,image/webp,application/pdf" required></div>
+          <div class="field"><label for="rc-note">Comentario <small>(opcional: n.º de operación, cuenta de origen…)</small></label><input id="rc-note" name="payer_note" maxlength="300"></div>
+          <button class="btn btn-primary" style="width:100%">Enviar comprobante</button>
+        </form>
+        <p style="margin-top:14px"><button class="btn btn-danger btn-sm" id="cancel-pay">Cancelar este pago</button> <a class="btn btn-sm" href="#/avisos">Mis avisos</a></p>`;
     } else if (p.status === 'pending') {
       body = `<div class="big">⏳</div><h1>Esperando la confirmación del pago</h1>
         <p>Si ya pagaste en Mercado Pago, en unos segundos se actualiza. Si pagaste en Abitab o Redpagos puede demorar unas horas.</p>
@@ -527,6 +562,40 @@
         if (!confirm('¿Cancelar este pago?')) return;
         await api(`/api/account/payments/${p.id}/cancel`, { method: 'POST' });
         route();
+      });
+    $$('[data-copy]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(b.dataset.copy);
+          toast('Copiado');
+        } catch {
+          toast(b.dataset.copy);
+        }
+      }),
+    );
+    const rep = $('#replace-receipt');
+    if (rep)
+      rep.addEventListener('click', (e) => {
+        e.preventDefault();
+        $('#receipt-form').hidden = false;
+      });
+    const rform = $('#receipt-form');
+    if (rform)
+      rform.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!rform.receipt.files.length) return toast('Elegí el archivo del comprobante');
+        const btn = $('button', rform);
+        btn.disabled = true;
+        btn.textContent = 'Enviando…';
+        try {
+          await api(`/api/account/payments/${p.id}/receipt`, { method: 'POST', body: new FormData(rform) });
+          toast('¡Comprobante enviado! Te avisamos cuando lo confirmemos.');
+          paymentView(id);
+        } catch (err) {
+          toast(err.message);
+          btn.disabled = false;
+          btn.textContent = 'Enviar comprobante';
+        }
       });
     const refresh = $('#refresh');
     if (refresh) refresh.addEventListener('click', () => paymentView(id));

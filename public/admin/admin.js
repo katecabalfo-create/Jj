@@ -52,7 +52,7 @@
   const TYPES = { empresa: '🏢 Empresa', servicios: '🛠️ Servicios', alquileres: '🏠 Alquileres' };
   const PAY = { pending: 'Pendiente', approved: 'Aprobado', rejected: 'Rechazado', cancelled: 'Cancelado' };
   const PAYB = { pending: 'badge-pending', approved: 'badge-approved', rejected: 'badge-rejected', cancelled: '' };
-  const METHOD = { mercadopago: 'Mercado Pago', transfer: 'Transferencia', free: 'Gratis', demo: 'Demo' };
+  const METHOD = { mercadopago: 'Mercado Pago', transfer: 'Transferencia Itaú', free: 'Gratis', demo: 'Demo' };
   const opt = (v, l, cur) => `<option value="${esc(v)}" ${String(cur ?? '') === String(v) ? 'selected' : ''}>${esc(l)}</option>`;
 
   function parseHash() {
@@ -105,6 +105,8 @@
     view.innerHTML = `
       ${ME.defaultPassword ? '<div class="alert">⚠️ Estás usando la contraseña por defecto. Definí la variable de entorno <code>ADMIN_PASSWORD</code> en el servidor.</div>' : ''}
       ${!s.mercadopago ? '<div class="alert">💳 Mercado Pago no está configurado: definí <code>MP_ACCESS_TOKEN</code> en el servidor para cobrar con tarjeta. Mientras tanto se puede pagar por transferencia.</div>' : ''}
+      ${!s.transferReady ? '<div class="alert">🏦 La transferencia bancaria no está disponible: cargá tu cuenta Itaú en <a href="#/ajustes">Ajustes</a>.</div>' : ''}
+      ${s.receiptsToReview ? `<div class="alert">📎 Hay ${s.receiptsToReview} comprobante(s) de transferencia para revisar. <a href="#/pagos?status=pending&method=transfer">Revisar →</a></div>` : ''}
       ${s.demo ? '<div class="alert">🧪 Modo de pagos de prueba activo (<code>PAYMENTS_DEMO=1</code>). Desactivalo antes de abrir el sitio al público.</div>' : ''}
       ${!s.smtp ? '<div class="alert">✉️ No hay servidor de correo (SMTP) configurado: las notificaciones quedan en cola hasta que lo configures. Ver <a href="#/alertas">Notificaciones</a>.</div>' : ''}
       <div class="stats">
@@ -405,7 +407,21 @@
         <fieldset><legend>💳 Cobros a anunciantes</legend>
           <p class="muted" style="margin-top:0">Mercado Pago: ${ME.mercadopago ? '✅ configurado' : '❌ sin configurar (definí <code>MP_ACCESS_TOKEN</code> en el servidor; ver README)'}. Los precios se editan en <a href="#/planes">Planes y precios</a>.</p>
           <label class="check" style="margin-bottom:12px"><input type="checkbox" name="payments_transfer_enabled" value="1" ${s.payments_transfer_enabled === '1' ? 'checked' : ''}> Aceptar transferencia bancaria (se confirma a mano en <a href="#/pagos">Pagos</a>)</label>
-          <div class="field"><label>Datos para la transferencia</label><textarea name="bank_transfer_info" rows="4">${esc(s.bank_transfer_info)}</textarea></div>
+          <div class="row-2">
+            <div class="field"><label>Banco</label><input name="transfer_bank" value="${esc(s.transfer_bank)}"></div>
+            <div class="field"><label>Tipo de cuenta</label><select name="transfer_account_type">${['Caja de ahorro', 'Cuenta corriente'].map((t) => opt(t, t, s.transfer_account_type)).join('')}</select></div>
+          </div>
+          <div class="row-2">
+            <div class="field"><label>N.º de cuenta en pesos (UYU)</label><input name="transfer_account_uyu" inputmode="numeric" placeholder="Ej: 1234567" value="${esc(s.transfer_account_uyu)}"></div>
+            <div class="field"><label>N.º de cuenta en dólares (USD)</label><input name="transfer_account_usd" inputmode="numeric" placeholder="Opcional" value="${esc(s.transfer_account_usd)}"></div>
+          </div>
+          <div class="row-2">
+            <div class="field"><label>Titular</label><input name="transfer_holder" value="${esc(s.transfer_holder)}"></div>
+            <div class="field"><label>RUT / CI del titular</label><input name="transfer_holder_doc" value="${esc(s.transfer_holder_doc)}"></div>
+          </div>
+          <div class="field"><label>Sucursal <small>(opcional)</small></label><input name="transfer_branch" value="${esc(s.transfer_branch)}"></div>
+          <div class="field"><label>Instrucciones para el anunciante</label><textarea name="bank_transfer_info" rows="3">${esc(s.bank_transfer_info)}</textarea>
+            <small>La transferencia solo se ofrece para los planes cuya moneda tenga una cuenta cargada.</small></div>
           <label class="check" style="margin-bottom:12px"><input type="checkbox" name="moderation_accounts" value="1" ${s.moderation_accounts === '1' ? 'checked' : ''}> Revisar también los avisos pagos antes de publicarlos</label>
           <label class="check"><input type="checkbox" name="public_free_posting" value="1" ${s.public_free_posting === '1' ? 'checked' : ''}> Permitir además publicar gratis sin cuenta (formulario anónimo)</label>
         </fieldset>
@@ -516,7 +532,7 @@
                   (p) => `<tr>
           <td>${p.id}</td>
           <td><a href="#/usuarios?id=${p.user_id}">${esc(p.business_name || p.name)}</a><div class="muted" style="font-size:.8rem">${esc(p.email)}</div></td>
-          <td>${esc(p.description)}${p.listing_id ? ` <a href="#/avisos/${p.listing_id}" style="font-size:.8rem">(aviso #${p.listing_id})</a>` : ''}${p.note ? `<div class="muted" style="font-size:.8rem">${esc(p.note)}</div>` : ''}${p.provider_payment_id ? `<div class="muted" style="font-size:.8rem">MP #${esc(p.provider_payment_id)}</div>` : ''}</td>
+          <td>${esc(p.description)}${p.listing_id ? ` <a href="#/avisos/${p.listing_id}" style="font-size:.8rem">(aviso #${p.listing_id})</a>` : ''}${p.note ? `<div class="muted" style="font-size:.8rem">${esc(p.note)}</div>` : ''}${p.provider_payment_id ? `<div class="muted" style="font-size:.8rem">MP #${esc(p.provider_payment_id)}</div>` : ''}${p.receipt_file ? `<div style="font-size:.85rem;margin-top:4px"><a href="/api/admin/payments/${p.id}/receipt" target="_blank">📎 Ver comprobante</a> <span class="muted">(${fmtDate(p.receipt_at)})</span></div>` : p.method === 'transfer' && p.status === 'pending' ? '<div class="muted" style="font-size:.8rem">Sin comprobante todavía</div>' : ''}${p.payer_note ? `<div class="muted" style="font-size:.8rem">💬 ${esc(p.payer_note)}</div>` : ''}</td>
           <td style="white-space:nowrap"><strong>${money(p.amount, p.currency)}</strong></td>
           <td>${METHOD[p.method]}</td>
           <td><span class="badge ${PAYB[p.status]}">${PAY[p.status]}</span></td>

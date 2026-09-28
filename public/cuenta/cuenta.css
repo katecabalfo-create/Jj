@@ -41,3 +41,11 @@ tr:last-child td { border-bottom: 0; }
 .badge-paused { background: var(--surface-2); color: var(--muted); }
 .badge-unpaid { background: #fde2df; color: #8a2419; }
 .badge-expired { background: #eee; color: #555; }
+
+.bank-card { text-align: left; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); margin: 12px 0; }
+.bank-head { background: #ec7000; color: #fff; padding: 12px 14px; font-weight: 800; font-size: 1.1rem; display: grid; }
+.bank-head small { font-weight: 500; opacity: 0.9; font-size: 0.85rem; }
+.bank-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--border); }
+.bank-row span { grid-column: 1; color: var(--muted); font-size: 0.82rem; }
+.bank-row strong { grid-column: 1; font-size: 1.05rem; overflow-wrap: anywhere; }
+.bank-row .btn { grid-column: 2; grid-row: 1 / span 2; }

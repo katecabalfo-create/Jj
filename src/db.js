@@ -22,7 +22,15 @@ const DEFAULT_SETTINGS = {
   public_free_posting: '0', // 1 = se permite publicar gratis sin cuenta (formulario anónimo)
   moderation_accounts: '0', // 1 = los avisos pagos de cuentas también se revisan antes de publicarse
   payments_transfer_enabled: '1',
-  bank_transfer_info: 'Banco: —\nCuenta: —\nTitular: —\nEnviá el comprobante a nuestro email indicando el número de pago.',
+  // Transferencia bancaria (Itaú). Se ofrece solo si hay al menos una cuenta cargada.
+  transfer_bank: 'Itaú',
+  transfer_holder: '',
+  transfer_holder_doc: '', // RUT o CI del titular
+  transfer_account_type: 'Caja de ahorro',
+  transfer_account_uyu: '',
+  transfer_account_usd: '',
+  transfer_branch: '',
+  bank_transfer_info: 'Indicá el número de pago en el concepto de la transferencia y subí el comprobante desde tu panel.',
 };
 
 // Planes iniciales (se editan desde el panel de administración).
@@ -176,6 +184,9 @@ function migrate(db) {
   addColumn(db, 'listings', 'payment_status', "TEXT NOT NULL DEFAULT 'none'");
   addColumn(db, 'listings', 'plan_id', 'INTEGER');
   addColumn(db, 'listings', 'paused', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn(db, 'payments', 'receipt_file', "TEXT NOT NULL DEFAULT ''");
+  addColumn(db, 'payments', 'receipt_at', 'TEXT');
+  addColumn(db, 'payments', 'payer_note', "TEXT NOT NULL DEFAULT ''");
   db.exec('CREATE INDEX IF NOT EXISTS idx_listings_user ON listings(user_id)');
 
   if (db.prepare('SELECT COUNT(*) n FROM plans').get().n === 0) {

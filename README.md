@@ -44,7 +44,7 @@ Desde su panel cada anunciante puede:
 **Medios de pago:**
 
 - **Mercado Pago** (tarjetas, Abitab, Redpagos): se activa con `MP_ACCESS_TOKEN`. El anunciante paga en el sitio seguro de Mercado Pago y el pago se confirma automáticamente por webhook (`/api/payments/mercadopago/webhook`). Siempre se consulta el pago a la API de Mercado Pago y se verifica monto y moneda antes de publicar.
-- **Transferencia bancaria**: el anunciante ve los datos de la cuenta que cargues en Ajustes; vos confirmás el pago en **Admin → Pagos** y el aviso se publica solo.
+- **Transferencia bancaria a Itaú**: en **Admin → Ajustes** cargás tu cuenta Itaú en pesos y/o dólares, el tipo de cuenta (caja de ahorro o cuenta corriente), el titular y su RUT o CI. El anunciante ve una ficha con esos datos, el monto exacto y la referencia "Pago N", cada uno con botón **Copiar**. Transfiere desde Itaú o desde cualquier otro banco y **sube el comprobante** (imagen o PDF) desde su panel. Te llega un email, ves el comprobante en **Admin → Pagos**, tocás **Confirmar** y el aviso se publica solo. Los comprobantes se guardan fuera de la carpeta pública (`data/receipts/`) y solo los ven el anunciante y el administrador. La transferencia se ofrece únicamente para los planes cuya moneda tenga una cuenta cargada.
 
 **En el panel de administración** se suman: **Anunciantes** (buscar, verificar con ✔️, suspender o eliminar cuentas), **Pagos** (ingresos, confirmar o rechazar transferencias, consultar Mercado Pago) y **Planes y precios** (crear o editar planes por tipo de cuenta: precio, moneda, días y si es destacado).
 
