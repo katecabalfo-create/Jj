@@ -8,9 +8,12 @@ const multer = require('multer');
 
 const { CATEGORIES, MALDONADO_LOCALITIES, DEPARTMENTS, getCategory, locationsFor } = require('./categories');
 const { getSettings, setSettings, token } = require('./db');
-const { searchListings, getPublicListing, validateListing, insertListing, updateListing } = require('./listings');
+const { PUBLIC_WHERE, searchListings, getPublicListing, validateListing, insertListing, updateListing } = require('./listings');
 const { notifyNewListing, buildDigests, flushOutbox, smtpConfigured, enqueueEmail } = require('./notify');
 const auth = require('./auth');
+const payments = require('./payments');
+const { createAccountRouter, publicAdvertiser } = require('./account');
+const { ACCOUNT_TYPES, ACCOUNT_TYPE_IDS } = require('./categories');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
@@ -100,13 +103,13 @@ function createApp(db, options = {}) {
   });
 
   app.get('/robots.txt', (req, res) => {
-    res.type('text').send(`User-agent: *\nDisallow: /admin/\nDisallow: /api/admin/\nSitemap: ${baseUrl(req)}/sitemap.xml\n`);
+    res.type('text').send(`User-agent: *\nDisallow: /admin/\nDisallow: /api/admin/\nDisallow: /cuenta/\nDisallow: /api/account/\nSitemap: ${baseUrl(req)}/sitemap.xml\n`);
   });
 
   app.get('/sitemap.xml', (req, res) => {
     const b = baseUrl(req);
     const rows = db
-      .prepare("SELECT id, updated_at FROM listings WHERE status = 'approved' ORDER BY id DESC LIMIT 5000")
+      .prepare(`SELECT l.id, l.updated_at FROM listings l WHERE ${PUBLIC_WHERE} ORDER BY l.id DESC LIMIT 5000`)
       .all();
     const urls = [
       `<url><loc>${b}/</loc></url>`,
@@ -143,6 +146,8 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
       contactEmail: s.contact_email,
       pageSize: Number(s.page_size) || 12,
       categories: CATEGORIES.map((c) => ({ ...c, locations: locationsFor(c.id) })),
+      accountTypes: ACCOUNT_TYPES,
+      freePosting: s.public_free_posting === '1',
       localities: MALDONADO_LOCALITIES,
       departments: DEPARTMENTS,
       adsense:
@@ -166,8 +171,7 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
   app.get('/api/counts', (req, res) => {
     const rows = db
       .prepare(
-        `SELECT category, COUNT(*) n FROM listings WHERE status = 'approved'
-         AND (expires_at IS NULL OR expires_at = '' OR expires_at >= strftime('%Y-%m-%d','now')) GROUP BY category`,
+        `SELECT l.category, COUNT(*) n FROM listings l WHERE ${PUBLIC_WHERE} GROUP BY l.category`,
       )
       .all();
     res.json(Object.fromEntries(rows.map((r) => [r.category, r.n])));
@@ -180,17 +184,24 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
     db.prepare('UPDATE listings SET views = views + 1 WHERE id = ?').run(id);
     const related = db
       .prepare(
-        `SELECT id, title, location, price, currency, image, category FROM listings
-         WHERE status = 'approved' AND category = ? AND id <> ? ORDER BY published_at DESC LIMIT 4`,
+        `SELECT l.id, l.title, l.location, l.price, l.currency, l.image, l.category, l.featured, l.published_at FROM listings l
+         WHERE ${PUBLIC_WHERE} AND l.category = ? AND l.id <> ? ORDER BY l.published_at DESC LIMIT 4`,
       )
       .all(l.category, id);
-    res.json({ ...l, related });
+    const advertiser = l.user_id
+      ? db.prepare('SELECT id, type, name, business_name, verified FROM users WHERE id = ?').get(l.user_id)
+      : null;
+    res.json({ ...l, related, advertiser: advertiser ? publicAdvertiser(advertiser) : null });
   });
 
   const submitLimiter = rateLimiter(Number(process.env.SUBMIT_LIMIT_PER_HOUR || 10), 60 * 60 * 1000);
   app.post('/api/listings', submitLimiter, handleUpload, (req, res) => {
     const body = req.body || {};
     if (body.hp_field) return res.status(201).json({ ok: true, id: 0, status: 'pending' }); // honeypot anti-spam
+    if (settings().public_free_posting !== '1') {
+      if (req.file) fs.rm(req.file.path, () => {});
+      return res.status(403).json({ error: 'Para publicar creá una cuenta de anunciante.' });
+    }
     const input = { ...body };
     if (req.file) input.image = `/uploads/${req.file.filename}`;
     delete input.expires_at;
@@ -213,6 +224,41 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
       enqueueEmail(db, s.contact_email, `Nuevo aviso ${approved ? 'publicado' : 'para revisar'}: ${data.title}`, `Sección: ${getCategory(data.category).label}\n${baseUrl(req)}/admin/#/avisos/${id}`);
     }
     res.status(201).json({ ok: true, id, status: approved ? 'approved' : 'pending' });
+  });
+
+  // Perfil público de un anunciante con sus avisos vigentes.
+  app.get('/api/advertisers/:id', (req, res) => {
+    const u = db.prepare('SELECT * FROM users WHERE id = ? AND active = 1').get(Number(req.params.id));
+    if (!u) return res.status(404).json({ error: 'Anunciante no encontrado' });
+    const s = settings();
+    res.json({
+      ...publicAdvertiser(u),
+      about: u.about,
+      location: u.location,
+      website: u.website,
+      since: u.created_at,
+      listings: searchListings(db, { ...req.query, user: u.id }, { defaultPageSize: Number(s.page_size) || 12 }),
+    });
+  });
+
+  // ---------- Cuentas de anunciantes ----------
+  app.use('/api/account', createAccountRouter(db, { handleUpload, baseUrl, rateLimiter }));
+
+  // ---------- Webhook de Mercado Pago ----------
+  app.post('/api/payments/mercadopago/webhook', async (req, res) => {
+    const type = req.query.type || req.query.topic || req.body?.type;
+    const dataId = String(req.query['data.id'] || req.query.id || req.body?.data?.id || '');
+    if (type !== 'payment' || !dataId) return res.sendStatus(200);
+    if (!payments.verifyMpSignature(req, dataId)) return res.sendStatus(401);
+    if (!payments.mpConfigured()) return res.sendStatus(200);
+    try {
+      const mp = await payments.fetchMpPayment(dataId);
+      payments.handleMpPayment(db, mp, baseUrl(req));
+      res.sendStatus(200);
+    } catch (err) {
+      console.error('Webhook Mercado Pago:', err.message);
+      res.sendStatus(500); // Mercado Pago reintenta
+    }
   });
 
   // ---------- Alertas / notificaciones ----------
@@ -317,7 +363,7 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
     res.json({ ok: true });
   });
   app.get('/api/admin/me', (req, res) => {
-    res.json({ admin: auth.isAdmin(req), defaultPassword: auth.usingDefaultPassword(), smtp: smtpConfigured() });
+    res.json({ admin: auth.isAdmin(req), defaultPassword: auth.usingDefaultPassword(), smtp: smtpConfigured(), mercadopago: payments.mpConfigured() });
   });
 
   const admin = express.Router();
@@ -330,7 +376,18 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
     const subs = db.prepare('SELECT COUNT(*) n, COALESCE(SUM(active),0) active FROM subscriptions').get();
     const outbox = Object.fromEntries(db.prepare('SELECT status, COUNT(*) n FROM outbox GROUP BY status').all().map((r) => [r.status, r.n]));
     const last7 = db.prepare("SELECT COUNT(*) n FROM listings WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days')").get().n;
-    res.json({ byStatus, byCategory, views, subs, outbox, last7, smtp: smtpConfigured() });
+    const users = Object.fromEntries(db.prepare('SELECT type, COUNT(*) n FROM users GROUP BY type').all().map((r) => [r.type, r.n]));
+    const revenue = db.prepare("SELECT currency, SUM(amount) total, COUNT(*) n FROM payments WHERE status = 'approved' AND method <> 'demo' GROUP BY currency").all();
+    const revenue30 = db
+      .prepare("SELECT currency, SUM(amount) total FROM payments WHERE status = 'approved' AND method <> 'demo' AND paid_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days') GROUP BY currency")
+      .all();
+    const pendingTransfers = db.prepare("SELECT COUNT(*) n FROM payments WHERE status = 'pending' AND method = 'transfer'").get().n;
+    const unpaid = db.prepare("SELECT COUNT(*) n FROM listings WHERE payment_status = 'unpaid'").get().n;
+    const pendingReady = db.prepare("SELECT COUNT(*) n FROM listings WHERE status = 'pending' AND payment_status <> 'unpaid'").get().n;
+    res.json({
+      byStatus, byCategory, views, subs, outbox, last7, smtp: smtpConfigured(), users, revenue, revenue30,
+      pendingTransfers, unpaid, pendingReady, mercadopago: payments.mpConfigured(), demo: payments.demoEnabled(),
+    });
   });
 
   admin.get('/listings', (req, res) => res.json(searchListings(db, req.query, { admin: true, defaultPageSize: 20 })));
@@ -373,6 +430,8 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
     const { data, errors } = validateListing(input, { partial: true });
     if (Object.keys(errors).length) return res.status(400).json({ error: 'Revisá los campos marcados.', fields: errors });
     if (req.body.featured !== undefined) data.featured = req.body.featured === '1' || req.body.featured === 'on' || req.body.featured === true ? 1 : 0;
+    if (req.body.paused !== undefined) data.paused = req.body.paused === '1' || req.body.paused === true ? 1 : 0;
+    if (['none', 'unpaid', 'paid'].includes(req.body.payment_status)) data.payment_status = req.body.payment_status;
     updateListing(db, id, data);
     if (req.body.status && req.body.status !== cur.status && ['pending', 'approved', 'rejected'].includes(req.body.status)) {
       applyStatus(id, req.body.status, req);
@@ -442,9 +501,134 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
     res.json({ ...r, smtp: smtpConfigured() });
   });
 
+  // Usuarios anunciantes
+  admin.get('/users', (req, res) => {
+    const where = [];
+    const args = [];
+    if (ACCOUNT_TYPE_IDS.includes(req.query.type)) {
+      where.push('u.type = ?');
+      args.push(req.query.type);
+    }
+    if (req.query.q) {
+      where.push('(u.email LIKE ? OR u.name LIKE ? OR u.business_name LIKE ? OR u.rut LIKE ?)');
+      const like = `%${String(req.query.q).trim()}%`;
+      args.push(like, like, like, like);
+    }
+    const rows = db
+      .prepare(
+        `SELECT u.id, u.type, u.email, u.name, u.business_name, u.rut, u.phone, u.active, u.verified, u.created_at, u.last_login_at,
+          (SELECT COUNT(*) FROM listings l WHERE l.user_id = u.id) AS listings,
+          (SELECT COALESCE(SUM(amount),0) FROM payments p WHERE p.user_id = u.id AND p.status = 'approved' AND p.method <> 'demo') AS paid
+         FROM users u ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY u.id DESC LIMIT 500`,
+      )
+      .all(...args);
+    res.json(rows);
+  });
+  admin.put('/users/:id', (req, res) => {
+    const id = Number(req.params.id);
+    const b = req.body || {};
+    if (b.active !== undefined) db.prepare('UPDATE users SET active = ? WHERE id = ?').run(b.active ? 1 : 0, id);
+    if (b.verified !== undefined) db.prepare('UPDATE users SET verified = ? WHERE id = ?').run(b.verified ? 1 : 0, id);
+    if (b.password) {
+      if (String(b.password).length < 8) return res.status(400).json({ error: 'Mínimo 8 caracteres' });
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(auth.hashPassword(b.password), id);
+    }
+    res.json({ ok: true });
+  });
+  admin.delete('/users/:id', (req, res) => {
+    db.prepare('DELETE FROM users WHERE id = ?').run(Number(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // Pagos
+  admin.get('/payments', (req, res) => {
+    const where = [];
+    const args = [];
+    if (['pending', 'approved', 'rejected', 'cancelled'].includes(req.query.status)) {
+      where.push('p.status = ?');
+      args.push(req.query.status);
+    }
+    if (['mercadopago', 'transfer', 'free', 'demo'].includes(req.query.method)) {
+      where.push('p.method = ?');
+      args.push(req.query.method);
+    }
+    res.json(
+      db
+        .prepare(
+          `SELECT p.*, u.email, u.name, u.business_name, u.type, l.title AS listing_title FROM payments p
+           JOIN users u ON u.id = p.user_id LEFT JOIN listings l ON l.id = p.listing_id
+           ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY p.id DESC LIMIT 500`,
+        )
+        .all(...args),
+    );
+  });
+  admin.post('/payments/:id/approve', (req, res) => {
+    const pay = db.prepare('SELECT * FROM payments WHERE id = ?').get(Number(req.params.id));
+    if (!pay) return res.status(404).json({ error: 'No encontrado' });
+    const ok = payments.applyPayment(db, pay.id, { note: String(req.body?.note || 'Confirmado por el administrador').slice(0, 300) }, baseUrl(req));
+    res.json({ ok });
+  });
+  admin.post('/payments/:id/reject', (req, res) => {
+    const r = db
+      .prepare("UPDATE payments SET status = 'rejected', note = ? WHERE id = ? AND status = 'pending'")
+      .run(String(req.body?.note || 'Rechazado por el administrador').slice(0, 300), Number(req.params.id));
+    res.json({ ok: r.changes > 0 });
+  });
+  admin.post('/payments/:id/sync', async (req, res) => {
+    const pay = db.prepare('SELECT * FROM payments WHERE id = ?').get(Number(req.params.id));
+    if (!pay) return res.status(404).json({ error: 'No encontrado' });
+    res.json(await payments.syncPayment(db, pay, baseUrl(req)));
+  });
+
+  // Planes y precios
+  function validatePlan(b) {
+    const errors = {};
+    const data = {
+      account_type: b.account_type,
+      name: String(b.name || '').trim().slice(0, 120),
+      description: String(b.description || '').trim().slice(0, 500),
+      price: Number(b.price),
+      currency: b.currency === 'USD' ? 'USD' : 'UYU',
+      duration_days: Number.parseInt(b.duration_days, 10),
+      featured: b.featured ? 1 : 0,
+      active: b.active === false || b.active === 0 || b.active === '0' ? 0 : 1,
+      sort: Number.parseInt(b.sort, 10) || 0,
+    };
+    if (!ACCOUNT_TYPE_IDS.includes(data.account_type)) errors.account_type = 'Tipo no válido';
+    if (!data.name) errors.name = 'Indicá un nombre';
+    if (!Number.isFinite(data.price) || data.price < 0) errors.price = 'Precio no válido';
+    if (!Number.isInteger(data.duration_days) || data.duration_days < 1 || data.duration_days > 365) errors.duration_days = 'Entre 1 y 365 días';
+    return { data, errors };
+  }
+  admin.get('/plans', (req, res) => res.json(db.prepare('SELECT * FROM plans ORDER BY account_type, sort, price').all()));
+  admin.post('/plans', (req, res) => {
+    const { data, errors } = validatePlan(req.body || {});
+    if (Object.keys(errors).length) return res.status(400).json({ error: 'Revisá los campos', fields: errors });
+    const keys = Object.keys(data);
+    const id = db.prepare(`INSERT INTO plans (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`).run(...keys.map((k) => data[k])).lastInsertRowid;
+    res.status(201).json(db.prepare('SELECT * FROM plans WHERE id = ?').get(id));
+  });
+  admin.put('/plans/:id', (req, res) => {
+    const { data, errors } = validatePlan(req.body || {});
+    if (Object.keys(errors).length) return res.status(400).json({ error: 'Revisá los campos', fields: errors });
+    const keys = Object.keys(data);
+    db.prepare(`UPDATE plans SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => data[k]), Number(req.params.id));
+    res.json(db.prepare('SELECT * FROM plans WHERE id = ?').get(Number(req.params.id)));
+  });
+  admin.delete('/plans/:id', (req, res) => {
+    // Se desactiva en vez de borrar para conservar el historial de pagos.
+    db.prepare('UPDATE plans SET active = 0 WHERE id = ?').run(Number(req.params.id));
+    res.json({ ok: true });
+  });
+
   app.use('/api/admin', admin);
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'No encontrado' }));
+  app.get('/cuenta', (req, res) => {
+    if (!req.originalUrl.split('?')[0].endsWith('/')) return res.redirect('/cuenta/');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(PUBLIC_DIR, 'cuenta', 'index.html'));
+  });
   app.get('/admin', (req, res) => {
     if (!req.originalUrl.split('?')[0].endsWith('/')) return res.redirect('/admin/');
     res.setHeader('Cache-Control', 'no-cache');

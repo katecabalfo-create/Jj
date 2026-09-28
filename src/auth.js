@@ -62,14 +62,14 @@ function parseCookies(header) {
 function issueSession(res, secure) {
   const exp = String(Date.now() + TTL_MS);
   const value = `${exp}.${sign(exp)}`;
-  res.setHeader(
+  res.append(
     'Set-Cookie',
     `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${TTL_MS / 1000}${secure ? '; Secure' : ''}`,
   );
 }
 
 function clearSession(res) {
-  res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
+  res.append('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
 }
 
 function isAdmin(req) {
@@ -85,4 +85,65 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { checkPassword, issueSession, clearSession, isAdmin, requireAdmin, usingDefaultPassword };
+// ---------- Cuentas de anunciantes ----------
+const USER_COOKIE = 'mo_user';
+const USER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(String(pw), salt, 64);
+  return `scrypt$${salt.toString('base64')}$${hash.toString('base64')}`;
+}
+
+function verifyPassword(pw, stored) {
+  const [alg, salt, hash] = String(stored).split('$');
+  if (alg !== 'scrypt' || !salt || !hash) return false;
+  const expected = Buffer.from(hash, 'base64');
+  const got = crypto.scryptSync(String(pw), Buffer.from(salt, 'base64'), expected.length);
+  return crypto.timingSafeEqual(got, expected);
+}
+
+// La sesión incluye un fragmento del hash de la contraseña: al cambiarla se cierran las demás sesiones.
+function pwVersion(user) {
+  return crypto.createHash('sha256').update(user.password_hash).digest('base64url').slice(0, 10);
+}
+
+function issueUserSession(res, user, secure) {
+  const exp = String(Date.now() + USER_TTL_MS);
+  const payload = `${user.id}.${exp}.${pwVersion(user)}`;
+  res.append(
+    'Set-Cookie',
+    `${USER_COOKIE}=${payload}.${sign(`u:${payload}`)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${USER_TTL_MS / 1000}${secure ? '; Secure' : ''}`,
+  );
+}
+
+function clearUserSession(res) {
+  res.append('Set-Cookie', `${USER_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+}
+
+/** Devuelve el usuario activo de la sesión o null. */
+function currentUser(req, db) {
+  const raw = parseCookies(req.headers.cookie)[USER_COOKIE];
+  if (!raw) return null;
+  const parts = raw.split('.');
+  if (parts.length !== 4) return null;
+  const [id, exp, pwv, sig] = parts;
+  if (!safeEqual(sig, sign(`u:${id}.${exp}.${pwv}`)) || Number(exp) < Date.now()) return null;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id));
+  if (!user || !user.active || pwVersion(user) !== pwv) return null;
+  return user;
+}
+
+function requireUser(db) {
+  return (req, res, next) => {
+    const user = currentUser(req, db);
+    if (!user) return res.status(401).json({ error: 'Iniciá sesión para continuar' });
+    req.user = user;
+    next();
+  };
+}
+
+module.exports = {
+  checkPassword, issueSession, clearSession, isAdmin, requireAdmin, usingDefaultPassword,
+  hashPassword, verifyPassword, issueUserSession, clearUserSession, currentUser, requireUser,
+};

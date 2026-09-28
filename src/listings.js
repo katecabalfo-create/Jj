@@ -13,6 +13,12 @@ const SORTS = {
   title: 'l.title COLLATE NOCASE ASC',
 };
 
+// Condición para que un aviso sea visible al público: aprobado, vigente, pagado si lo requiere y con cuenta activa.
+const PUBLIC_WHERE = `l.status = 'approved'
+  AND (l.expires_at IS NULL OR l.expires_at = '' OR l.expires_at >= strftime('%Y-%m-%d','now'))
+  AND l.payment_status <> 'unpaid' AND l.paused = 0
+  AND (l.user_id IS NULL OR EXISTS (SELECT 1 FROM users u WHERE u.id = l.user_id AND u.active = 1))`;
+
 const FIELDS = [
   'category', 'title', 'description', 'subtype', 'location', 'price', 'currency', 'event_date',
   'company', 'contact_name', 'contact_phone', 'contact_email', 'website', 'image', 'expires_at',
@@ -34,22 +40,35 @@ function num(v) {
  * Búsqueda con filtros, orden y paginación.
  * `admin` permite ver cualquier estado y avisos vencidos.
  */
-function searchListings(db, params, { admin = false, defaultPageSize = 12 } = {}) {
+function searchListings(db, params, { admin = false, ownerId = null, defaultPageSize = 12 } = {}) {
   const where = [];
   const args = [];
+  const privileged = admin || ownerId !== null;
+  if (ownerId !== null) {
+    where.push('l.user_id = ?');
+    args.push(ownerId);
+  } else if (params.user) {
+    where.push('l.user_id = ?');
+    args.push(Number(params.user) || 0);
+  }
 
   if (params.category && CATEGORY_IDS.includes(params.category)) {
     where.push('l.category = ?');
     args.push(params.category);
   }
-  if (admin) {
+  if (privileged) {
     if (params.status && ['pending', 'approved', 'rejected'].includes(params.status)) {
       where.push('l.status = ?');
       args.push(params.status);
     }
+    if (params.payment === 'ready') where.push("l.payment_status <> 'unpaid'");
+    else if (['none', 'unpaid', 'paid'].includes(params.payment)) {
+      where.push('l.payment_status = ?');
+      args.push(params.payment);
+    }
+    if (params.expired === '1') where.push("l.expires_at IS NOT NULL AND l.expires_at <> '' AND l.expires_at < strftime('%Y-%m-%d','now')");
   } else {
-    where.push("l.status = 'approved'");
-    where.push("(l.expires_at IS NULL OR l.expires_at = '' OR l.expires_at >= strftime('%Y-%m-%d','now'))");
+    where.push(PUBLIC_WHERE);
   }
 
   const q = String(params.q || '').trim();
@@ -93,12 +112,12 @@ function searchListings(db, params, { admin = false, defaultPageSize = 12 } = {}
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const sortKey = SORTS[params.sort] ? params.sort : (params.category === 'eventos' && !admin ? 'event_date' : 'relevance');
-  const pageSize = clampInt(params.pageSize, defaultPageSize, 1, admin ? 200 : 50);
+  const pageSize = clampInt(params.pageSize, defaultPageSize, 1, privileged ? 200 : 50);
   const total = db.prepare(`SELECT COUNT(*) AS n FROM listings l ${whereSql}`).get(...args).n;
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const page = clampInt(params.page, 1, 1, pages);
 
-  const cols = admin ? 'l.*' : publicColumns('l');
+  const cols = privileged ? 'l.*' : publicColumns('l');
   const items = db
     .prepare(`SELECT ${cols} FROM listings l ${whereSql} ORDER BY ${SORTS[sortKey]}, l.id DESC LIMIT ? OFFSET ?`)
     .all(...args, pageSize, (page - 1) * pageSize);
@@ -107,13 +126,13 @@ function searchListings(db, params, { admin = false, defaultPageSize = 12 } = {}
 }
 
 function publicColumns(alias) {
-  const cols = ['id', ...FIELDS.filter((f) => f !== 'expires_at'), 'featured', 'views', 'published_at', 'created_at'];
+  const cols = ['id', ...FIELDS.filter((f) => f !== 'expires_at'), 'featured', 'views', 'published_at', 'created_at', 'user_id'];
   return cols.map((c) => `${alias}.${c}`).join(', ');
 }
 
 function getPublicListing(db, id) {
   return db
-    .prepare(`SELECT ${publicColumns('l')} FROM listings l WHERE l.id = ? AND l.status = 'approved'`)
+    .prepare(`SELECT ${publicColumns('l')} FROM listings l WHERE l.id = ? AND ${PUBLIC_WHERE}`)
     .get(id);
 }
 
@@ -191,4 +210,4 @@ function updateListing(db, id, data) {
   ).run(...keys.map((k) => data[k]), id);
 }
 
-module.exports = { searchListings, getPublicListing, validateListing, insertListing, updateListing, SORTS, FIELDS };
+module.exports = { PUBLIC_WHERE, searchListings, getPublicListing, validateListing, insertListing, updateListing, SORTS, FIELDS };

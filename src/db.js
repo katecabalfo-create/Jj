@@ -19,7 +19,21 @@ const DEFAULT_SETTINGS = {
   adsense_slot_detail: '',
   adsense_feed_every: '6',
   adsense_auto_ads: '0',
+  public_free_posting: '0', // 1 = se permite publicar gratis sin cuenta (formulario anónimo)
+  moderation_accounts: '0', // 1 = los avisos pagos de cuentas también se revisan antes de publicarse
+  payments_transfer_enabled: '1',
+  bank_transfer_info: 'Banco: —\nCuenta: —\nTitular: —\nEnviá el comprobante a nuestro email indicando el número de pago.',
 };
+
+// Planes iniciales (se editan desde el panel de administración).
+const DEFAULT_PLANS = [
+  ['empresa', 'Aviso 30 días', 'Publicación de empleo, aviso o evento durante 30 días.', 490, 30, 0],
+  ['empresa', 'Aviso destacado 30 días', 'Aparece primero en su sección y en la portada, con distintivo de destacado.', 990, 30, 1],
+  ['servicios', 'Servicio 30 días', 'Publicá tu servicio durante 30 días.', 290, 30, 0],
+  ['servicios', 'Servicio destacado 30 días', 'Tu servicio primero en la sección, con distintivo de destacado.', 590, 30, 1],
+  ['alquileres', 'Alquiler 30 días', 'Publicá tu propiedad durante 30 días.', 390, 30, 0],
+  ['alquileres', 'Alquiler destacado 30 días', 'Tu propiedad primero en Alquileres, con distintivo de destacado.', 790, 30, 1],
+];
 
 function openDb(file) {
   const dbFile = file || process.env.DB_FILE || path.join(__dirname, '..', 'data', 'maldonado.db');
@@ -97,8 +111,85 @@ function migrate(db) {
       value TEXT NOT NULL
     );
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL CHECK (type IN ('empresa','servicios','alquileres')),
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL,
+      business_name TEXT NOT NULL DEFAULT '',
+      rut TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      website TEXT NOT NULL DEFAULT '',
+      location TEXT NOT NULL DEFAULT '',
+      about TEXT NOT NULL DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 1,
+      verified INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      last_login_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS password_resets (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS plans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_type TEXT NOT NULL CHECK (account_type IN ('empresa','servicios','alquileres')),
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      price REAL NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'UYU',
+      duration_days INTEGER NOT NULL DEFAULT 30,
+      featured INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      sort INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      listing_id INTEGER REFERENCES listings(id) ON DELETE SET NULL,
+      plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+      description TEXT NOT NULL DEFAULT '',
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'UYU',
+      duration_days INTEGER NOT NULL DEFAULT 30,
+      featured INTEGER NOT NULL DEFAULT 0,
+      method TEXT NOT NULL CHECK (method IN ('mercadopago','transfer','free','demo')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
+      provider_ref TEXT NOT NULL DEFAULT '',
+      provider_payment_id TEXT NOT NULL DEFAULT '',
+      checkout_url TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      paid_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
+    CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+  `);
+  addColumn(db, 'listings', 'user_id', 'INTEGER REFERENCES users(id) ON DELETE CASCADE');
+  // none = aviso sin cuenta o cargado por el admin; unpaid = esperando pago; paid = pago confirmado
+  addColumn(db, 'listings', 'payment_status', "TEXT NOT NULL DEFAULT 'none'");
+  addColumn(db, 'listings', 'plan_id', 'INTEGER');
+  addColumn(db, 'listings', 'paused', 'INTEGER NOT NULL DEFAULT 0');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_listings_user ON listings(user_id)');
+
+  if (db.prepare('SELECT COUNT(*) n FROM plans').get().n === 0) {
+    const ins = db.prepare('INSERT INTO plans (account_type, name, description, price, duration_days, featured, sort) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    DEFAULT_PLANS.forEach((p, i) => ins.run(...p, i));
+  }
+
   const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insert.run(k, v);
+}
+
+function addColumn(db, table, column, def) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
 }
 
 function getSettings(db) {

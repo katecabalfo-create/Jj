@@ -23,7 +23,7 @@
       td.actions { white-space: nowrap; }
       tr:last-child td { border-bottom: 0; }
       .admin-filters { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; margin: 12px 0; }
-      @media (min-width: 800px) { .admin-filters { grid-template-columns: 2fr 1fr 1fr 1fr auto; } }
+      @media (min-width: 800px) { .admin-filters { grid-template-columns: 2fr repeat(4, 1fr) auto; } }
       .admin-filters .full { grid-column: 1 / -1; }
       @media (min-width: 800px) { .admin-filters .full { grid-column: auto; } }
       .bulk { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
@@ -47,9 +47,12 @@
       </div>
       <nav class="tabs"><div class="wrap admin-nav" id="admin-nav">
         <a href="#/">📊 Resumen</a>
-        <a href="#/avisos?status=pending">⏳ Pendientes</a>
+        <a href="#/avisos?status=pending&payment=ready">⏳ Pendientes</a>
         <a href="#/avisos">📋 Avisos</a>
         <a href="#/avisos/nuevo">＋ Nuevo</a>
+        <a href="#/usuarios">👥 Anunciantes</a>
+        <a href="#/pagos">💳 Pagos</a>
+        <a href="#/planes">🏷️ Planes y precios</a>
         <a href="#/alertas">🔔 Notificaciones</a>
         <a href="#/ajustes">⚙️ Ajustes y AdSense</a>
       </div></nav>

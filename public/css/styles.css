@@ -265,6 +265,24 @@ label { font-weight: 600; font-size: 0.92rem; }
   .hide-sm { display: none; }
   .brand-text { font-size: 0.9rem; white-space: normal; line-height: 1.1; }
   .brand-text strong { display: block; }
+  .header-actions { gap: 4px; }
+  .header-actions .btn { padding: 0 10px; }
+  .brand img { width: 32px; height: 32px; }
 }
 .skeleton { background: linear-gradient(90deg, var(--surface-2), var(--surface), var(--surface-2)); background-size: 200% 100%; animation: sk 1.2s infinite; border-radius: var(--radius); min-height: 220px; }
 @keyframes sk { to { background-position: -200% 0; } }
+
+/* ---------- Cuentas de anunciantes ---------- */
+.account-options { display: grid; gap: 10px; margin: 14px 0; }
+.type-option {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 14px 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: var(--text); box-shadow: var(--shadow);
+}
+.type-option:hover { border-color: var(--primary); }
+.type-option .big { font-size: 2rem; }
+.type-option small { display: block; color: var(--muted); }
+.advertiser {
+  display: grid; gap: 2px; margin-top: 14px; padding: 12px; border-radius: 12px; background: var(--surface-2); text-decoration: none; color: var(--text);
+}
+.advertiser span { font-size: 0.8rem; color: var(--muted); }
+.advertiser small { color: var(--primary); font-weight: 600; }

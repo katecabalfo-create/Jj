@@ -8,7 +8,7 @@ const path = require('node:path');
 
 process.env.ADMIN_PASSWORD = 'secreto';
 process.env.SESSION_SECRET = 'test-secret';
-const { openDb } = require('../src/db');
+const { openDb, setSettings } = require('../src/db');
 const { createApp } = require('../src/app');
 const { seedIfEmpty } = require('../src/seed');
 
@@ -38,6 +38,7 @@ async function req(method, url, body, headers = {}) {
 test.before(async () => {
   const db = openDb(':memory:');
   seedIfEmpty(db);
+  setSettings(db, { public_free_posting: '1' });
   const app = createApp(db, { uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'mo-up-')) });
   await new Promise((r) => (server = app.listen(0, r)));
   base = `http://127.0.0.1:${server.address().port}`;

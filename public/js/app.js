@@ -416,6 +416,7 @@
             ${l.contact_name ? `<dt>Contacto</dt><dd>${esc(l.contact_name)}</dd>` : ''}
             <dt>Referencia</dt><dd>#${l.id}</dd>
           </dl>
+          ${l.advertiser ? `<a class="advertiser" href="#/anunciante/${l.advertiser.id}"><span>Publicado por</span><strong>${esc(l.advertiser.name)}${l.advertiser.verified ? ' <span title="Anunciante verificado">✔️</span>' : ''}</strong><small>Ver todos sus avisos →</small></a>` : ''}
           <div class="contact-actions">
             ${tel ? `<a class="btn btn-primary" href="tel:${esc(tel)}">📞 Llamar ${esc(l.contact_phone)}</a>` : ''}
             ${wa ? `<a class="btn" href="https://wa.me/${esc(wa)}?text=${encodeURIComponent(`Hola, vi tu aviso "${l.title}" en Maldonado Oportunidades`)}" target="_blank" rel="noopener">💬 WhatsApp</a>` : ''}
@@ -459,13 +460,32 @@
     if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
+  function accountOptionsHtml(selectedCat) {
+    const types = META.accountTypes.slice().sort((a, b) => b.categories.includes(selectedCat) - a.categories.includes(selectedCat));
+    return `<div class="account-options">${types
+      .map(
+        (t) => `<a class="type-option" href="/cuenta/#/registro?tipo=${t.id}">
+          <span class="big">${t.icon}</span><span><strong>${esc(t.label)}</strong><small>${esc(t.pitch)}</small></span><span aria-hidden="true">→</span></a>`,
+      )
+      .join('')}</div>
+      <p style="text-align:center">¿Ya tenés cuenta? <a href="/cuenta/#/ingresar"><strong>Ingresá a tu panel</strong></a></p>`;
+  }
+
   function publishView(params) {
     setTitle('Publicar un aviso');
     renderTabs('publish');
     const selected = cat(params.cat) ? params.cat : 'empleo-maldonado';
+    if (!META.freePosting) {
+      view.innerHTML = `<div class="form-page">
+        <h1>＋ Publicar en ${esc(META.siteName)}</h1>
+        <div class="steps-note">Creá tu cuenta gratis y gestioná tus avisos desde tu panel: editalos, pausalos, renovalos y mirá cuántas visitas tienen. Pagás con Mercado Pago o transferencia solo cuando publicás.</div>
+        ${accountOptionsHtml(selected)}</div>`;
+      return;
+    }
     view.innerHTML = `
       <div class="form-page">
         <h1>＋ Publicar un aviso</h1>
+        <details class="panel" style="margin-bottom:16px"><summary><strong>¿Sos empresa, ofrecés servicios o alquilás seguido?</strong> Creá una cuenta con tu propio panel.</summary>${accountOptionsHtml(selected)}</details>
         <div class="steps-note">Completá el formulario. Tu publicación será revisada antes de aparecer en el sitio. Publicar es gratis.</div>
         <form id="publish-form" class="panel" novalidate>
           <div class="field"><label>Sección *</label>
@@ -621,6 +641,29 @@
       });
   }
 
+  async function advertiserView(id, params) {
+    view.innerHTML = '<div class="skeleton" style="margin:16px 0"></div>';
+    let a;
+    try {
+      a = await api(`/api/advertisers/${Number(id)}?${new URLSearchParams(params)}`);
+    } catch {
+      return notFound('Este anunciante no existe.');
+    }
+    setTitle(a.name);
+    renderTabs('advertiser');
+    const d = a.listings;
+    view.innerHTML = `
+      <section class="panel" style="margin:16px 0">
+        <h1>${esc(a.name)} ${a.verified ? '<span title="Anunciante verificado">✔️</span>' : ''}</h1>
+        <div class="card-meta"><span class="badge">${esc(a.typeLabel)}</span>${a.location ? `<span>📍 ${esc(a.location)}</span>` : ''}<span>En el sitio desde ${new Date(a.since).toLocaleDateString('es-UY', { month: 'long', year: 'numeric' })}</span></div>
+        ${a.about ? `<p class="detail-desc">${esc(a.about)}</p>` : ''}
+        ${a.website ? `<a href="${esc(a.website)}" target="_blank" rel="noopener nofollow">🔗 ${esc(a.website.replace(/^https?:\/\//, ''))}</a>` : ''}
+      </section>
+      <div class="section-head"><h2>Avisos publicados (${d.total})</h2></div>
+      ${d.items.length ? gridHtml(d.items) + paginationHtml(d.page, d.pages, (p) => buildHash(`/anunciante/${a.id}`, { page: p === 1 ? '' : p })) : '<div class="empty"><p>No tiene avisos vigentes.</p></div>'}`;
+    activateAds(view);
+  }
+
   function privacyView() {
     setTitle('Privacidad y cookies');
     renderTabs('privacy');
@@ -668,6 +711,7 @@
     else if (a === 'buscar') await listView(null, params);
     else if (a === 'aviso' && b) await detailView(b);
     else if (a === 'publicar') publishView(params);
+    else if (a === 'anunciante' && b) await advertiserView(b, params);
     else if (a === 'alertas') await alertsView(params);
     else if (a === 'privacidad') privacyView();
     else if (a === 'terminos') termsView();

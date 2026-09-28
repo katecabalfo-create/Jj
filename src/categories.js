@@ -25,6 +25,39 @@ const DEPARTMENTS = [
 
 const CATEGORY_IDS = CATEGORIES.map((c) => c.id);
 
+// Tipos de cuenta de anunciante y las secciones donde puede publicar cada uno.
+const ACCOUNT_TYPES = [
+  {
+    id: 'empresa',
+    label: 'Empresas',
+    panel: 'Panel de Empresas',
+    icon: '🏢',
+    pitch: 'Publicá ofertas de empleo, avisos publicitarios y eventos de tu empresa.',
+    businessLabel: 'Razón social / nombre comercial',
+    categories: ['empleo-maldonado', 'empleo-pais', 'avisos-maldonado', 'avisos-pais', 'eventos'],
+  },
+  {
+    id: 'servicios',
+    label: 'Servicios',
+    panel: 'Panel de Servicios',
+    icon: '🛠️',
+    pitch: 'Ofrecé tus servicios: plomería, jardinería, clases, fletes, limpieza y más.',
+    businessLabel: 'Nombre profesional o del emprendimiento',
+    categories: ['avisos-maldonado', 'avisos-pais'],
+  },
+  {
+    id: 'alquileres',
+    label: 'Alquileres',
+    panel: 'Panel de Alquileres',
+    icon: '🏠',
+    pitch: 'Para propietarios e inmobiliarias: publicá alquileres anuales y de temporada.',
+    businessLabel: 'Inmobiliaria (opcional)',
+    categories: ['alquileres'],
+  },
+];
+const ACCOUNT_TYPE_IDS = ACCOUNT_TYPES.map((t) => t.id);
+const getAccountType = (id) => ACCOUNT_TYPES.find((t) => t.id === id) || null;
+
 function getCategory(id) {
   return CATEGORIES.find((c) => c.id === id) || null;
 }
@@ -35,4 +68,4 @@ function locationsFor(categoryId) {
   return cat.region === 'pais' ? DEPARTMENTS.filter((d) => d !== 'Maldonado') : MALDONADO_LOCALITIES;
 }
 
-module.exports = { CATEGORIES, CATEGORY_IDS, MALDONADO_LOCALITIES, DEPARTMENTS, getCategory, locationsFor };
+module.exports = { ACCOUNT_TYPES, ACCOUNT_TYPE_IDS, getAccountType, CATEGORIES, CATEGORY_IDS, MALDONADO_LOCALITIES, DEPARTMENTS, getCategory, locationsFor };

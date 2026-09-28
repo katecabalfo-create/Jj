@@ -47,6 +47,12 @@
 
   const cat = (id) => META.categories.find((c) => c.id === id) || { label: id, icon: '' };
   const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('es-UY', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+  const nf = new Intl.NumberFormat('es-UY', { maximumFractionDigits: 2 });
+  const money = (a, c) => `${c === 'USD' ? 'US$' : '$'} ${nf.format(a || 0)}`;
+  const TYPES = { empresa: '🏢 Empresa', servicios: '🛠️ Servicios', alquileres: '🏠 Alquileres' };
+  const PAY = { pending: 'Pendiente', approved: 'Aprobado', rejected: 'Rechazado', cancelled: 'Cancelado' };
+  const PAYB = { pending: 'badge-pending', approved: 'badge-approved', rejected: 'badge-rejected', cancelled: '' };
+  const METHOD = { mercadopago: 'Mercado Pago', transfer: 'Transferencia', free: 'Gratis', demo: 'Demo' };
   const opt = (v, l, cur) => `<option value="${esc(v)}" ${String(cur ?? '') === String(v) ? 'selected' : ''}>${esc(l)}</option>`;
 
   function parseHash() {
@@ -63,7 +69,7 @@
     const h = location.hash || '#/';
     $$('#admin-nav a').forEach((a) => {
       const href = a.getAttribute('href');
-      const on = href === h || (href === '#/avisos' && h.startsWith('#/avisos') && !h.includes('status=pending') && !h.startsWith('#/avisos/nuevo'));
+      const on = href === h || (href === '#/avisos' && h.startsWith('#/avisos') && !h.includes('payment=ready') && !h.startsWith('#/avisos/nuevo'));
       a.toggleAttribute('aria-current', on);
       if (on) a.setAttribute('aria-current', 'page');
     });
@@ -98,9 +104,14 @@
     }
     view.innerHTML = `
       ${ME.defaultPassword ? '<div class="alert">⚠️ Estás usando la contraseña por defecto. Definí la variable de entorno <code>ADMIN_PASSWORD</code> en el servidor.</div>' : ''}
+      ${!s.mercadopago ? '<div class="alert">💳 Mercado Pago no está configurado: definí <code>MP_ACCESS_TOKEN</code> en el servidor para cobrar con tarjeta. Mientras tanto se puede pagar por transferencia.</div>' : ''}
+      ${s.demo ? '<div class="alert">🧪 Modo de pagos de prueba activo (<code>PAYMENTS_DEMO=1</code>). Desactivalo antes de abrir el sitio al público.</div>' : ''}
       ${!s.smtp ? '<div class="alert">✉️ No hay servidor de correo (SMTP) configurado: las notificaciones quedan en cola hasta que lo configures. Ver <a href="#/alertas">Notificaciones</a>.</div>' : ''}
       <div class="stats">
-        <a class="stat" href="#/avisos?status=pending"><b>${s.byStatus.pending || 0}</b><span>Pendientes de revisión</span></a>
+        <a class="stat" href="#/avisos?status=pending&payment=ready"><b>${s.pendingReady}</b><span>Pendientes de revisión</span></a>
+        <a class="stat" href="#/pagos"><b>${s.revenue30.length ? s.revenue30.map((r) => money(r.total, r.currency)).join(' + ') : '$ 0'}</b><span>Ingresos últimos 30 días</span></a>
+        <a class="stat" href="#/pagos?status=pending&method=transfer"><b>${s.pendingTransfers}</b><span>Transferencias por confirmar</span></a>
+        <a class="stat" href="#/usuarios"><b>${Object.values(s.users).reduce((a, b) => a + b, 0)}</b><span>Anunciantes (🏢 ${s.users.empresa || 0} · 🛠️ ${s.users.servicios || 0} · 🏠 ${s.users.alquileres || 0})</span></a>
         <a class="stat" href="#/avisos?status=approved"><b>${s.byStatus.approved || 0}</b><span>Publicados</span></a>
         <div class="stat"><b>${s.views}</b><span>Visitas a avisos</span></div>
         <a class="stat" href="#/alertas"><b>${s.subs.active}</b><span>Suscriptores activos</span></a>
@@ -127,11 +138,12 @@
     const data = await api(`/api/admin/listings?${q}`);
     const go = (patch) => (location.hash = hashFor('/avisos', { ...params, page: '', ...patch }));
     view.innerHTML = `
-      <div class="section-head"><h1>${params.status === 'pending' ? '⏳ Pendientes de revisión' : '📋 Avisos'}</h1><a class="btn btn-primary btn-sm" href="#/avisos/nuevo">＋ Nuevo aviso</a></div>
+      <div class="section-head"><h1>${params.status === 'pending' && params.payment === 'ready' ? '⏳ Pendientes de revisión' : '📋 Avisos'}</h1><a class="btn btn-primary btn-sm" href="#/avisos/nuevo">＋ Nuevo aviso</a></div>
       <form class="admin-filters" id="af">
         <input class="full" name="q" type="search" placeholder="Buscar título, descripción, empresa…" value="${esc(params.q || '')}">
         <select name="category">${opt('', 'Todas las secciones')}${META.categories.map((c) => opt(c.id, c.label, params.category)).join('')}</select>
         <select name="status">${opt('', 'Todos los estados')}${Object.entries(STATUS).map(([k, v]) => opt(k, v, params.status)).join('')}</select>
+        <select name="payment">${opt('', 'Pago: todos')}${opt('ready', 'Sin deuda de pago', params.payment)}${opt('unpaid', 'Falta pagar', params.payment)}${opt('paid', 'Pagados', params.payment)}${opt('none', 'Gratuitos / admin', params.payment)}</select>
         <select name="sort">${[['recent', 'Más recientes'], ['oldest', 'Más antiguos'], ['popular', 'Más vistos'], ['price_desc', 'Precio ↓'], ['price_asc', 'Precio ↑'], ['title', 'Título']].map(([v, l]) => opt(v, l, params.sort || 'recent')).join('')}</select>
         <button class="btn btn-primary">Filtrar</button>
       </form>
@@ -154,7 +166,7 @@
           <td>${l.image ? `<img class="thumb" src="${esc(l.image)}" alt="">` : `<div class="thumb" style="display:grid;place-items:center">${cat(l.category).icon}</div>`}</td>
           <td class="title-cell"><a href="#/avisos/${l.id}">${l.featured ? '★ ' : ''}${esc(l.title)}</a><div class="muted" style="font-size:.82rem">#${l.id} · ${esc(l.location || '')} ${l.contact_phone ? `· ${esc(l.contact_phone)}` : ''} ${l.contact_email ? `· ${esc(l.contact_email)}` : ''}</div></td>
           <td>${esc(cat(l.category).label)}</td>
-          <td><span class="badge badge-${l.status}">${STATUS[l.status]}</span></td>
+          <td><span class="badge badge-${l.status}">${STATUS[l.status]}</span>${l.payment_status === 'unpaid' ? ' <span class="badge badge-rejected">Sin pagar</span>' : l.payment_status === 'paid' ? ' <span class="badge badge-approved">💳 Pago</span>' : ''}${l.paused ? ' <span class="badge">Pausado</span>' : ''}${l.user_id ? `<div><a href="#/usuarios?id=${l.user_id}" style="font-size:.8rem">Cuenta #${l.user_id}</a></div>` : ''}</td>
           <td style="white-space:nowrap">${fmtDate(l.created_at)}</td>
           <td>${l.views}</td>
           <td class="actions">
@@ -237,6 +249,10 @@
           </div>
           <div class="field"><label>Sitio web</label><input name="website" value="${esc(l.website || '')}"></div>
         </fieldset>
+        <div class="row-2">
+          <div class="field"><label>Pago</label><select name="payment_status">${opt('none', 'No requiere pago', l.payment_status || 'none')}${opt('unpaid', 'Falta pagar (oculto)', l.payment_status)}${opt('paid', 'Pagado', l.payment_status)}</select></div>
+          <div class="field"><label>&nbsp;</label><label class="check"><input type="checkbox" name="paused" value="1" ${l.paused ? 'checked' : ''}> Pausado por el anunciante</label></div>
+        </div>
         <label class="check" style="margin-bottom:16px"><input type="checkbox" name="featured" value="1" ${l.featured ? 'checked' : ''}> ★ Aviso destacado (aparece primero)</label>
         ${!isNew ? `<p class="muted" style="font-size:.85rem">Creado ${fmtDate(l.created_at)} · Publicado ${fmtDate(l.published_at)} · ${l.views} visitas</p>` : ''}
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -266,6 +282,7 @@
       e.preventDefault();
       const fd = new FormData(form);
       if (!form.featured.checked) fd.set('featured', '0');
+      if (!form.paused.checked) fd.set('paused', '0');
       if (!form.imageFile.files.length) fd.delete('imageFile');
       try {
         const saved = await api(isNew ? '/api/admin/listings' : `/api/admin/listings/${l.id}`, { method: isNew ? 'POST' : 'PUT', body: fd });
@@ -383,7 +400,14 @@
           <div class="field"><label>Descripción</label><input name="site_tagline" value="${esc(s.site_tagline)}"></div>
           <div class="field"><label>Email de contacto / administración</label><input name="contact_email" type="email" value="${esc(s.contact_email)}"><small>Recibe un aviso por cada publicación nueva y aparece en la página de privacidad.</small></div>
           <div class="field"><label>Avisos por página</label><input name="page_size" type="number" min="3" max="50" value="${esc(s.page_size)}"></div>
-          <label class="check"><input type="checkbox" name="moderation" value="1" ${s.moderation === '1' ? 'checked' : ''}> Revisar los avisos del público antes de publicarlos (recomendado)</label>
+          <label class="check"><input type="checkbox" name="moderation" value="1" ${s.moderation === '1' ? 'checked' : ''}> Revisar los avisos anónimos (sin cuenta) antes de publicarlos</label>
+        </fieldset>
+        <fieldset><legend>💳 Cobros a anunciantes</legend>
+          <p class="muted" style="margin-top:0">Mercado Pago: ${ME.mercadopago ? '✅ configurado' : '❌ sin configurar (definí <code>MP_ACCESS_TOKEN</code> en el servidor; ver README)'}. Los precios se editan en <a href="#/planes">Planes y precios</a>.</p>
+          <label class="check" style="margin-bottom:12px"><input type="checkbox" name="payments_transfer_enabled" value="1" ${s.payments_transfer_enabled === '1' ? 'checked' : ''}> Aceptar transferencia bancaria (se confirma a mano en <a href="#/pagos">Pagos</a>)</label>
+          <div class="field"><label>Datos para la transferencia</label><textarea name="bank_transfer_info" rows="4">${esc(s.bank_transfer_info)}</textarea></div>
+          <label class="check" style="margin-bottom:12px"><input type="checkbox" name="moderation_accounts" value="1" ${s.moderation_accounts === '1' ? 'checked' : ''}> Revisar también los avisos pagos antes de publicarlos</label>
+          <label class="check"><input type="checkbox" name="public_free_posting" value="1" ${s.public_free_posting === '1' ? 'checked' : ''}> Permitir además publicar gratis sin cuenta (formulario anónimo)</label>
         </fieldset>
         <fieldset><legend>💰 Google AdSense</legend>
           <p class="muted" style="margin-top:0">1) Creá tu cuenta en <a href="https://adsense.google.com" target="_blank" rel="noopener">adsense.google.com</a> y agregá tu dominio. 2) Pegá acá tu ID de editor. 3) Cuando Google apruebe el sitio, creá bloques de anuncios "Display" y pegá sus IDs de bloque (data-ad-slot). El archivo <a href="/ads.txt" target="_blank">/ads.txt</a> se genera solo.</p>
@@ -407,12 +431,167 @@
       const body = Object.fromEntries(new FormData(f));
       body.moderation = f.moderation.checked ? '1' : '0';
       body.adsense_enabled = f.adsense_enabled.checked ? '1' : '0';
+      for (const k of ['payments_transfer_enabled', 'moderation_accounts', 'public_free_posting']) body[k] = f[k].checked ? '1' : '0';
       try {
         await api('/api/admin/settings', { method: 'PUT', json: body });
         toast('Ajustes guardados');
       } catch (err) {
         toast(err.message);
       }
+    });
+  }
+
+  // ---------- Anunciantes ----------
+  async function usersView(params) {
+    const q = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([k]) => k !== 'id')));
+    let rows = await api(`/api/admin/users?${q}`);
+    if (params.id) rows = rows.filter((u) => String(u.id) === params.id);
+    view.innerHTML = `
+      <h1>👥 Anunciantes</h1>
+      <form class="admin-filters" id="uf">
+        <input class="full" name="q" type="search" placeholder="Email, nombre, empresa o RUT" value="${esc(params.q || '')}">
+        <select name="type">${opt('', 'Todos los tipos')}${Object.entries(TYPES).map(([k, v]) => opt(k, v, params.type)).join('')}</select>
+        <button class="btn btn-primary">Buscar</button>
+      </form>
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Anunciante</th><th>Tipo</th><th>Avisos</th><th>Pagado</th><th>Alta</th><th>Verificado</th><th>Activo</th><th></th></tr></thead>
+        <tbody>${
+          rows.length
+            ? rows
+                .map(
+                  (u) => `<tr>
+          <td>${u.id}</td>
+          <td><strong>${esc(u.business_name || u.name)}</strong><div class="muted" style="font-size:.82rem">${esc(u.name)} · ${esc(u.email)}${u.phone ? ` · ${esc(u.phone)}` : ''}${u.rut ? ` · RUT ${esc(u.rut)}` : ''}</div></td>
+          <td style="white-space:nowrap">${TYPES[u.type]}</td>
+          <td><a href="#/avisos?user=${u.id}">${u.listings}</a></td>
+          <td style="white-space:nowrap">${money(u.paid, 'UYU')}</td>
+          <td style="white-space:nowrap">${fmtDate(u.created_at)}</td>
+          <td><input type="checkbox" data-verified="${u.id}" ${u.verified ? 'checked' : ''} aria-label="Verificado"></td>
+          <td><input type="checkbox" data-active="${u.id}" ${u.active ? 'checked' : ''} aria-label="Activo"></td>
+          <td class="actions"><a class="btn btn-sm" href="/#/anunciante/${u.id}" target="_blank" title="Página pública">↗</a> <button class="btn btn-sm btn-danger" data-del-user="${u.id}" title="Eliminar">🗑</button></td></tr>`,
+                )
+                .join('')
+            : '<tr><td colspan="9" class="muted" style="text-align:center;padding:30px">No hay anunciantes.</td></tr>'
+        }</tbody></table></div>
+      <p class="muted" style="font-size:.88rem">Desactivar una cuenta oculta todos sus avisos del sitio y le impide ingresar. "Verificado" muestra un ✔️ junto a su nombre.</p>`;
+    $('#uf').addEventListener('submit', (e) => {
+      e.preventDefault();
+      location.hash = hashFor('/usuarios', Object.fromEntries(new FormData(e.target)));
+    });
+    $$('[data-verified]').forEach((c) => c.addEventListener('change', async () => {
+      await api(`/api/admin/users/${c.dataset.verified}`, { method: 'PUT', json: { verified: c.checked } });
+      toast(c.checked ? 'Marcado como verificado' : 'Verificación quitada');
+    }));
+    $$('[data-active]').forEach((c) => c.addEventListener('change', async () => {
+      await api(`/api/admin/users/${c.dataset.active}`, { method: 'PUT', json: { active: c.checked } });
+      toast(c.checked ? 'Cuenta activada' : 'Cuenta suspendida: sus avisos se ocultaron');
+    }));
+    $$('[data-del-user]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('¿Eliminar la cuenta y TODOS sus avisos? No se puede deshacer.')) return;
+      await api(`/api/admin/users/${b.dataset.delUser}`, { method: 'DELETE' });
+      toast('Cuenta eliminada');
+      route();
+    }));
+  }
+
+  // ---------- Pagos ----------
+  async function paymentsView(params) {
+    const rows = await api(`/api/admin/payments?${new URLSearchParams(params)}`);
+    const totals = {};
+    rows.filter((p) => p.status === 'approved' && p.method !== 'demo').forEach((p) => (totals[p.currency] = (totals[p.currency] || 0) + p.amount));
+    view.innerHTML = `
+      <h1>💳 Pagos</h1>
+      <form class="admin-filters" id="pf">
+        <select name="status">${opt('', 'Todos los estados')}${Object.entries(PAY).map(([k, v]) => opt(k, v, params.status)).join('')}</select>
+        <select name="method">${opt('', 'Todos los medios')}${Object.entries(METHOD).map(([k, v]) => opt(k, v, params.method)).join('')}</select>
+        <button class="btn btn-primary">Filtrar</button>
+      </form>
+      <p class="muted">${rows.length} pago(s) · Aprobados en esta lista: <strong>${Object.entries(totals).map(([c, t]) => money(t, c)).join(' + ') || '$ 0'}</strong></p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Anunciante</th><th>Detalle</th><th>Monto</th><th>Medio</th><th>Estado</th><th>Fecha</th><th></th></tr></thead>
+        <tbody>${
+          rows.length
+            ? rows
+                .map(
+                  (p) => `<tr>
+          <td>${p.id}</td>
+          <td><a href="#/usuarios?id=${p.user_id}">${esc(p.business_name || p.name)}</a><div class="muted" style="font-size:.8rem">${esc(p.email)}</div></td>
+          <td>${esc(p.description)}${p.listing_id ? ` <a href="#/avisos/${p.listing_id}" style="font-size:.8rem">(aviso #${p.listing_id})</a>` : ''}${p.note ? `<div class="muted" style="font-size:.8rem">${esc(p.note)}</div>` : ''}${p.provider_payment_id ? `<div class="muted" style="font-size:.8rem">MP #${esc(p.provider_payment_id)}</div>` : ''}</td>
+          <td style="white-space:nowrap"><strong>${money(p.amount, p.currency)}</strong></td>
+          <td>${METHOD[p.method]}</td>
+          <td><span class="badge ${PAYB[p.status]}">${PAY[p.status]}</span></td>
+          <td style="white-space:nowrap">${fmtDate(p.created_at)}${p.paid_at ? `<div class="muted" style="font-size:.8rem">Pagado ${fmtDate(p.paid_at)}</div>` : ''}</td>
+          <td class="actions">${
+            p.status === 'pending'
+              ? `<button class="btn btn-sm" data-approve="${p.id}" title="Confirmar pago">✅ Confirmar</button> <button class="btn btn-sm" data-reject="${p.id}" title="Rechazar">🚫</button>${p.method === 'mercadopago' ? ` <button class="btn btn-sm" data-sync="${p.id}" title="Consultar a Mercado Pago">🔄</button>` : ''}`
+              : ''
+          }</td></tr>`,
+                )
+                .join('')
+            : '<tr><td colspan="8" class="muted" style="text-align:center;padding:30px">No hay pagos.</td></tr>'
+        }</tbody></table></div>`;
+    $('#pf').addEventListener('submit', (e) => {
+      e.preventDefault();
+      location.hash = hashFor('/pagos', Object.fromEntries(new FormData(e.target)));
+    });
+    $$('[data-approve]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('¿Confirmás que recibiste este pago? El aviso se publicará.')) return;
+      await api(`/api/admin/payments/${b.dataset.approve}/approve`, { method: 'POST', json: {} });
+      toast('Pago confirmado y aviso publicado');
+      route();
+    }));
+    $$('[data-reject]').forEach((b) => b.addEventListener('click', async () => {
+      const note = prompt('Motivo (se muestra al anunciante):', 'No recibimos la transferencia');
+      if (note === null) return;
+      await api(`/api/admin/payments/${b.dataset.reject}/reject`, { method: 'POST', json: { note } });
+      route();
+    }));
+    $$('[data-sync]').forEach((b) => b.addEventListener('click', async () => {
+      const r = await api(`/api/admin/payments/${b.dataset.sync}/sync`, { method: 'POST' });
+      toast(`Estado: ${PAY[r.status]}`);
+      route();
+    }));
+  }
+
+  // ---------- Planes ----------
+  async function plansView() {
+    const plans = await api('/api/admin/plans');
+    const row = (p) => `<tr data-plan="${p.id || ''}">
+      <td><select name="account_type">${Object.entries(TYPES).map(([k, v]) => opt(k, v, p.account_type)).join('')}</select></td>
+      <td><input name="name" value="${esc(p.name || '')}" placeholder="Nombre"><input name="description" value="${esc(p.description || '')}" placeholder="Descripción" style="margin-top:6px"></td>
+      <td><input name="price" inputmode="decimal" value="${p.price ?? ''}" style="min-width:90px"><select name="currency" style="margin-top:6px">${opt('UYU', '$', p.currency)}${opt('USD', 'US$', p.currency)}</select></td>
+      <td><input name="duration_days" type="number" min="1" max="365" value="${p.duration_days || 30}" style="min-width:70px"></td>
+      <td><input type="checkbox" name="featured" ${p.featured ? 'checked' : ''} aria-label="Destacado"></td>
+      <td><input type="checkbox" name="active" ${p.active !== 0 ? 'checked' : ''} aria-label="Activo"></td>
+      <td><input name="sort" type="number" value="${p.sort || 0}" style="min-width:60px"></td>
+      <td class="actions"><button class="btn btn-sm btn-primary" data-save>Guardar</button></td></tr>`;
+    view.innerHTML = `
+      <h1>🏷️ Planes y precios</h1>
+      <p class="muted">Cada anunciante ve solo los planes de su tipo de cuenta. Precio 0 = gratis. Un plan "destacado" pone el aviso primero en su sección. Los precios se cobran por aviso.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tipo de cuenta</th><th>Plan</th><th>Precio</th><th>Días</th><th>Destacado</th><th>Activo</th><th>Orden</th><th></th></tr></thead>
+        <tbody id="plans-body">${plans.map(row).join('')}</tbody>
+      </table></div>
+      <p><button class="btn" id="add-plan">＋ Agregar plan</button></p>`;
+    const bind = (tr) => $('[data-save]', tr).addEventListener('click', async () => {
+      const g = (n) => $(`[name="${n}"]`, tr);
+      const body = {
+        account_type: g('account_type').value, name: g('name').value, description: g('description').value, price: g('price').value,
+        currency: g('currency').value, duration_days: g('duration_days').value, featured: g('featured').checked, active: g('active').checked, sort: g('sort').value,
+      };
+      try {
+        const id = tr.dataset.plan;
+        const saved = await api(id ? `/api/admin/plans/${id}` : '/api/admin/plans', { method: id ? 'PUT' : 'POST', json: body });
+        tr.dataset.plan = saved.id;
+        toast('Plan guardado');
+      } catch (err) {
+        toast(err.fields ? Object.values(err.fields).join(' · ') : err.message);
+      }
+    });
+    $$('#plans-body tr').forEach(bind);
+    $('#add-plan').addEventListener('click', () => {
+      $('#plans-body').insertAdjacentHTML('beforeend', row({ account_type: 'empresa', currency: 'UYU', duration_days: 30, active: 1 }));
+      bind($('#plans-body tr:last-child'));
     });
   }
 
@@ -425,6 +604,9 @@
       else if (parts[0] === 'avisos' && parts[1]) await editView(parts[1]);
       else if (parts[0] === 'avisos') await listingsView(params);
       else if (parts[0] === 'alertas') await alertsView();
+      else if (parts[0] === 'usuarios') await usersView(params);
+      else if (parts[0] === 'pagos') await paymentsView(params);
+      else if (parts[0] === 'planes') await plansView();
       else if (parts[0] === 'ajustes') await settingsView();
       else location.hash = '#/';
     } catch (err) {

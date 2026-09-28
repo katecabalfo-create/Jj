@@ -58,7 +58,7 @@ function enqueueEmail(db, to, subject, body) {
 
 /** Se llama cuando un aviso pasa a "aprobado". */
 function notifyNewListing(db, listing, baseUrl) {
-  if (!listing || listing.status !== 'approved' || listing.notified) return 0;
+  if (!listing || listing.status !== 'approved' || listing.notified || listing.payment_status === 'unpaid') return 0;
   const subs = db.prepare('SELECT * FROM subscriptions WHERE active = 1 AND confirmed = 1').all();
   let count = 0;
   for (const sub of subs) {
