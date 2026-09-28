@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Maldo Buzz Hub</title>
+  <meta name="description" content="Maldo Buzz Hub: lo más comentado del día en tendencias, cultura, tecnología y comunidad.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23facc15'/><text x='16' y='23' font-size='18' text-anchor='middle' font-family='Arial' font-weight='bold' fill='%23111'>M</text></svg>">
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a href="#" class="logo"><span class="logo-mark">M</span> Maldo<span class="accent">Buzz</span></a>
+      <nav class="nav-links" id="navLinks">
+        <a href="#tendencias">Tendencias</a>
+        <a href="#categorias">Categorías</a>
+        <a href="#comunidad">Comunidad</a>
+        <a href="#newsletter">Newsletter</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="icon-btn" id="themeToggle" aria-label="Cambiar tema">◐</button>
+        <a href="#newsletter" class="btn btn-primary btn-sm">Suscríbete</a>
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="Menú">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-inner">
+        <div class="hero-copy">
+          <span class="pill">🔥 En vivo · lo que suena hoy</span>
+          <h1>Todo el <span class="highlight">buzz</span> en un solo lugar.</h1>
+          <p>Noticias, tendencias y conversaciones que están moviendo a la comunidad. Curado a diario por el equipo de Maldo.</p>
+          <div class="hero-cta">
+            <a href="#tendencias" class="btn btn-primary">Ver tendencias</a>
+            <a href="#comunidad" class="btn btn-ghost">Únete a la comunidad</a>
+          </div>
+          <div class="stats">
+            <div><strong data-count="120">0</strong><span>K lectores</span></div>
+            <div><strong data-count="850">0</strong><span>historias</span></div>
+            <div><strong data-count="24">0</strong><span>h al día</span></div>
+          </div>
+        </div>
+        <div class="hero-card" aria-hidden="true">
+          <div class="ticker-head">📈 Trending ahora</div>
+          <ol class="ticker">
+            <li><span>#1</span> Lanzamientos tech de la semana</li>
+            <li><span>#2</span> El festival que todos comentan</li>
+            <li><span>#3</span> Nueva ola de creadores</li>
+            <li><span>#4</span> Recetas virales en 15 min</li>
+            <li><span>#5</span> Fichajes de última hora</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section id="tendencias" class="section">
+      <div class="container">
+        <div class="section-head">
+          <h2>Tendencias</h2>
+          <div class="filters" id="filters">
+            <button class="chip active" data-filter="all">Todo</button>
+            <button class="chip" data-filter="tech">Tech</button>
+            <button class="chip" data-filter="cultura">Cultura</button>
+            <button class="chip" data-filter="deportes">Deportes</button>
+            <button class="chip" data-filter="lifestyle">Lifestyle</button>
+          </div>
+        </div>
+        <div class="grid" id="postGrid"></div>
+      </div>
+    </section>
+
+    <section id="categorias" class="section alt">
+      <div class="container">
+        <h2>Explora por categoría</h2>
+        <div class="cats">
+          <a class="cat" href="#tendencias" data-go="tech"><span>💻</span>Tech<small>Gadgets, IA y startups</small></a>
+          <a class="cat" href="#tendencias" data-go="cultura"><span>🎬</span>Cultura<small>Cine, música y series</small></a>
+          <a class="cat" href="#tendencias" data-go="deportes"><span>⚽</span>Deportes<small>Resultados y fichajes</small></a>
+          <a class="cat" href="#tendencias" data-go="lifestyle"><span>🌿</span>Lifestyle<small>Comida, viajes y bienestar</small></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="comunidad" class="section">
+      <div class="container">
+        <h2>Lo que dice la comunidad</h2>
+        <div class="quotes">
+          <blockquote><p>“Mi primera parada cada mañana. Me entero de todo en cinco minutos.”</p><cite>— Lucía, Madrid</cite></blockquote>
+          <blockquote><p>“Justo el tono que buscaba: rápido, divertido y sin ruido.”</p><cite>— Andrés, CDMX</cite></blockquote>
+          <blockquote><p>“Las listas de tendencias son adictivas. Ya las comparto con mi equipo.”</p><cite>— Valentina, Bogotá</cite></blockquote>
+        </div>
+      </div>
+    </section>
+
+    <section id="newsletter" class="section">
+      <div class="container">
+        <div class="newsletter">
+          <div>
+            <h2>El buzz, directo a tu correo</h2>
+            <p>Un resumen diario con lo más importante. Sin spam, te das de baja cuando quieras.</p>
+          </div>
+          <form id="newsForm" class="news-form">
+            <input type="email" required placeholder="tu@correo.com" aria-label="Correo electrónico">
+            <button class="btn btn-dark" type="submit">Suscribirme</button>
+          </form>
+          <p class="form-msg" id="formMsg" role="status"></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <a href="#" class="logo"><span class="logo-mark">M</span> Maldo<span class="accent">Buzz</span></a>
+      <p>© <span id="year"></span> Maldo Buzz Hub. Hecho con ☕ y mucha curiosidad.</p>
+      <div class="social">
+        <a href="#" aria-label="Instagram">IG</a>
+        <a href="#" aria-label="TikTok">TT</a>
+        <a href="#" aria-label="X">X</a>
+        <a href="#" aria-label="YouTube">YT</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
