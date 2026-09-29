@@ -203,11 +203,10 @@ function migrate(db) {
   if (addColumn(db, 'users', 'email_verified', 'INTEGER NOT NULL DEFAULT 0')) db.exec('UPDATE users SET email_verified = 1');
   addColumn(db, 'users', 'verify_token_hash', "TEXT NOT NULL DEFAULT ''");
   addColumn(db, 'users', 'billing_address', "TEXT NOT NULL DEFAULT ''");
-  // Facturación: datos del cliente al momento del pago y n.º de e-factura cargado por el administrador
+  // Datos del cliente al momento del pago (aparecen en el comprobante)
   addColumn(db, 'payments', 'invoice_name', "TEXT NOT NULL DEFAULT ''");
   addColumn(db, 'payments', 'invoice_rut', "TEXT NOT NULL DEFAULT ''");
   addColumn(db, 'payments', 'invoice_address', "TEXT NOT NULL DEFAULT ''");
-  addColumn(db, 'payments', 'invoice_number', "TEXT NOT NULL DEFAULT ''");
   db.exec(`
     CREATE TABLE IF NOT EXISTS listing_views_daily (
       listing_id INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE,

@@ -652,21 +652,14 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
       if (/^[=+\-@]/.test(t)) t = `'${t}`; // evita fórmulas al abrirlo en Excel
       return `"${t.replace(/"/g, '""')}"`;
     };
-    const header = ['N.º pago', 'Fecha de pago', 'Cliente', 'RUT', 'Dirección', 'Email', 'Concepto', 'Medio', 'Moneda', 'Monto', 'Ref. Mercado Pago', 'E-factura'];
+    const header = ['N.º pago', 'Fecha de pago', 'Cliente', 'RUT', 'Dirección', 'Email', 'Concepto', 'Medio', 'Moneda', 'Monto', 'Ref. Mercado Pago'];
     const lines = rows.map((p) =>
-      [p.id, (p.paid_at || '').slice(0, 10), p.invoice_name, p.invoice_rut, p.invoice_address, p.email, p.description, p.method, p.currency, String(p.amount).replace('.', ','), p.provider_payment_id, p.invoice_number]
+      [p.id, (p.paid_at || '').slice(0, 10), p.invoice_name, p.invoice_rut, p.invoice_address, p.email, p.description, p.method, p.currency, String(p.amount).replace('.', ','), p.provider_payment_id]
         .map(cell)
         .join(';'),
     );
     res.setHeader('Content-Disposition', `attachment; filename="pagos-${req.query.month || 'todos'}.csv"`);
     res.type('text/csv; charset=utf-8').send('\ufeff' + [header.map(cell).join(';'), ...lines].join('\r\n'));
-  });
-
-  admin.put('/payments/:id/invoice', (req, res) => {
-    const num = String(req.body?.invoice_number || '').trim().slice(0, 60);
-    const r = db.prepare('UPDATE payments SET invoice_number = ? WHERE id = ?').run(num, Number(req.params.id));
-    if (!r.changes) return res.status(404).json({ error: 'No encontrado' });
-    res.json({ ok: true, invoice_number: num });
   });
 
   admin.get('/payments/:id/recibo', (req, res) => {

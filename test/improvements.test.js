@@ -188,7 +188,7 @@ test('visitas por día y estadísticas del anunciante', async () => {
   assert.equal((await client()('GET', `/api/account/listings/${l.json.id}/stats`)).status, 401);
 });
 
-test('facturación: datos del cliente, comprobante, n.º de e-factura y CSV', async () => {
+test('comprobante de pago con datos del cliente y CSV para el contador', async () => {
   const req = client();
   await register(req, 'factura@example.com', 'empresa', { rut: '211234560018', business_name: 'Hotel =Punta SA', billing_address: 'Gorlero 123' });
   const fd = new FormData();
@@ -202,11 +202,11 @@ test('facturación: datos del cliente, comprobante, n.º de e-factura y CSV', as
 
   const admin = client();
   await admin('POST', '/api/admin/login', { password: 'secreto' });
-  await admin('PUT', `/api/admin/payments/${pay.json.id}/invoice`, { invoice_number: 'e-Factura A-1234' });
   const recibo = await req('GET', `/api/account/payments/${pay.json.id}/recibo`);
   assert.equal(recibo.status, 200);
   assert.match(recibo.text, /211234560018/);
-  assert.match(recibo.text, /e-Factura A-1234/);
+  assert.match(recibo.text, /Gorlero 123/);
+  assert.doesNotMatch(recibo.text, /e-factura|CFE/i);
   assert.equal((await client()('GET', `/api/account/payments/${pay.json.id}/recibo`)).status, 401);
 
   // El CSV excluye pagos de prueba; se verifica un pago real confirmado a mano
@@ -215,7 +215,7 @@ test('facturación: datos del cliente, comprobante, n.º de e-factura y CSV', as
   assert.equal(csv.status, 200);
   assert.match(csv.text, /"211234560018"/);
   assert.match(csv.text, /"'Hotel =Punta SA"|"Hotel =Punta SA"/);
-  assert.match(csv.text, /e-Factura A-1234/);
+  assert.doesNotMatch(csv.text, /e-factura/i);
   assert.equal((await client()('GET', '/api/admin/payments.csv')).status, 401);
 });
 

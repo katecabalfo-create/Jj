@@ -435,8 +435,8 @@
           <label class="check" style="margin-bottom:12px"><input type="checkbox" name="moderation_accounts" value="1" ${s.moderation_accounts === '1' ? 'checked' : ''}> Revisar también los avisos pagos antes de publicarlos</label>
           <label class="check"><input type="checkbox" name="public_free_posting" value="1" ${s.public_free_posting === '1' ? 'checked' : ''}> Permitir además publicar gratis sin cuenta (formulario anónimo)</label>
         </fieldset>
-        <fieldset><legend>🧾 Facturación y comprobantes</legend>
-          <p class="muted" style="margin-top:0">Estos datos aparecen en el comprobante de pago que descarga cada anunciante. La factura electrónica (CFE) se emite con tu proveedor habilitado por DGI; después cargás su número en <a href="#/pagos">Pagos</a> y exportás el CSV para tu contador.</p>
+        <fieldset><legend>🧾 Datos para los comprobantes</legend>
+          <p class="muted" style="margin-top:0">Estos datos aparecen en el comprobante de pago que descarga cada anunciante. En <a href="#/pagos">Pagos</a> podés exportar los pagos a un CSV para tu contador.</p>
           <div class="field"><label>Razón social</label><input name="billing_name" value="${esc(s.billing_name)}"></div>
           <div class="row-2">
             <div class="field"><label>RUT</label><input name="billing_rut" inputmode="numeric" value="${esc(s.billing_rut)}"></div>
@@ -572,8 +572,7 @@
           <td style="white-space:nowrap">${fmtDate(p.created_at)}${p.paid_at ? `<div class="muted" style="font-size:.8rem">Pagado ${fmtDate(p.paid_at)}</div>` : ''}</td>
           <td class="actions">${
             p.status === 'approved' && p.method !== 'demo' && Number(p.amount) > 0
-              ? `<a class="btn btn-sm" href="/api/admin/payments/${p.id}/recibo" target="_blank" title="Comprobante de pago">🧾</a>
-                 <form class="inv-form" data-inv="${p.id}" style="display:inline-flex;gap:4px;margin-top:4px"><input name="invoice_number" placeholder="N.º e-factura" value="${esc(p.invoice_number || '')}" style="min-height:34px;padding:4px 8px;width:130px" aria-label="Número de e-factura"><button class="btn btn-sm" title="Guardar n.º de e-factura">💾</button></form>`
+              ? `<a class="btn btn-sm" href="/api/admin/payments/${p.id}/recibo" target="_blank" title="Comprobante de pago">🧾 Comprobante</a>`
               : p.status === 'pending'
               ? `<button class="btn btn-sm" data-approve="${p.id}" title="Confirmar pago">✅ Confirmar</button> <button class="btn btn-sm" data-reject="${p.id}" title="Rechazar">🚫</button>${p.method === 'mercadopago' ? ` <button class="btn btn-sm" data-sync="${p.id}" title="Consultar a Mercado Pago">🔄</button>` : ''}`
               : ''
@@ -587,11 +586,6 @@
       location.hash = hashFor('/pagos', Object.fromEntries(new FormData(e.target)));
     });
     $('#csv-month').addEventListener('change', (e) => ($('#csv-link').href = `/api/admin/payments.csv?month=${e.target.value}`));
-    $$('[data-inv]').forEach((f) => f.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      await api(`/api/admin/payments/${f.dataset.inv}/invoice`, { method: 'PUT', json: { invoice_number: f.invoice_number.value } });
-      toast('N.º de e-factura guardado: el anunciante lo ve en su comprobante');
-    }));
     $$('[data-approve]').forEach((b) => b.addEventListener('click', async () => {
       if (!confirm('¿Confirmás que recibiste este pago? El aviso se publicará.')) return;
       await api(`/api/admin/payments/${b.dataset.approve}/approve`, { method: 'POST', json: {} });

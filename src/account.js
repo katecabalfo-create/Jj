@@ -374,7 +374,7 @@ function createAccountRouter(db, { handleUpload, prepareImages, discardUploads, 
     res.sendFile(path.join(receiptDir, pay.receipt_file), { headers: { 'Cache-Control': 'private, no-store' } });
   });
 
-  // Comprobante de pago imprimible (no reemplaza a la e-factura, que se emite con un proveedor habilitado por DGI).
+  // Comprobante de pago imprimible.
   r.get('/payments/:id/recibo', needUser, (req, res) => {
     const pay = db.prepare("SELECT * FROM payments WHERE id = ? AND user_id = ? AND status = 'approved'").get(Number(req.params.id), req.user.id);
     if (!pay) return res.status(404).type('text').send('Comprobante no disponible');
@@ -438,10 +438,9 @@ function renderReceipt(db, pay) {
     ${row('Concepto', pay.description)}
     ${row('Medio de pago', METHOD_NAMES[pay.method] || pay.method)}
     ${row('Referencia', pay.provider_payment_id ? `Mercado Pago ${pay.provider_payment_id}` : '')}
-    ${row('E-factura', pay.invoice_number)}
     <tr><th>Total</th><td class="total">${e(money)}</td></tr>
   </table>
-  <p class="note">${pay.invoice_number ? `Este pago está documentado en la e-factura ${e(pay.invoice_number)}.` : 'Este comprobante acredita el pago. La factura electrónica (CFE), si corresponde, se envía por separado.'}</p>
+  <p class="note">Este comprobante acredita el pago del servicio de publicación.</p>
 </div>
 <p><button type="button" onclick="window.print()">Imprimir o guardar como PDF</button></p>
 </body></html>`;

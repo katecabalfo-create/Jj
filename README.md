@@ -67,12 +67,11 @@ Para probar todo el recorrido sin cobrar, arrancá con `PAYMENTS_DEMO=1`: aparec
 - **Mapa en alquileres y eventos**: al cargar el aviso se toca el mapa para marcar la ubicación, que puede ser aproximada y tiene que estar dentro de Uruguay. En el aviso se muestra el mapa con enlaces a Google Maps y OpenStreetMap. Los mapas usan OpenStreetMap con Leaflet, que se sirve desde el propio sitio.
 - **Confirmación de email**: al registrarse, el anunciante recibe un enlace para confirmar su email y no puede pagar ni publicar hasta hacerlo. Se exige solo si está activado en Ajustes **y** hay un servidor de correo configurado. Desde **Admin → Anunciantes** podés marcar un email como confirmado a mano.
 - **Aviso de vencimiento**: el anunciante recibe un email unos días antes de que venza su aviso (3 por defecto, configurable) con el enlace para renovarlo. Se envía una sola vez por cada fecha de vencimiento.
-- **Facturación**:
+- **Comprobantes de pago**:
   - En Ajustes cargás tu razón social, RUT y dirección.
   - Cada pago guarda los datos de facturación del cliente: nombre o razón social, RUT y dirección.
   - El anunciante descarga un **comprobante de pago** imprimible.
-  - En **Admin → Pagos** cargás el número de la e-factura (CFE) que emitiste y **exportás un CSV por mes** para tu contador.
-  - La e-factura en sí se emite con tu proveedor habilitado por DGI: este sistema no la genera.
+  - En **Admin → Pagos** podés **exportar un CSV por mes** con los pagos, para tu contador.
 - **Aviso de cookies**: el visitante elige entre "Aceptar todas" y "Solo necesarias". Si no acepta, los anuncios de AdSense se muestran sin personalizar. Puede cambiar su elección desde la página de privacidad.
 - **Visitas por día**: el panel del anunciante muestra un gráfico de los últimos 30 días, con el total de sus avisos y el detalle de cada uno (botón 📈). Los datos también se pueden ver como tabla.
 - **Compartir en redes**: botones de WhatsApp, Facebook, X, Telegram y LinkedIn (este último solo en empleos), más uno para copiar el enlace.

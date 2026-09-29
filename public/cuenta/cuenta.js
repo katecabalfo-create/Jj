@@ -642,7 +642,6 @@
     if (p.status === 'approved') {
       body = `<div class="big">✅</div><h1>¡Pago confirmado!</h1>
         <p>${p.listing ? (p.listing.status === 'approved' ? `Tu aviso está publicado hasta el ${fmtDate((p.listing.expires_at || '').slice(0, 10))}.` : 'Tu aviso quedó en revisión y se publicará en breve.') : ''}</p>
-        ${p.invoice_number ? `<p>E-factura: <strong>${esc(p.invoice_number)}</strong></p>` : ''}
         <p style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${p.listing && p.listing.status === 'approved' ? `<a class="btn btn-primary" href="/#/aviso/${p.listing.id}" target="_blank">Ver mi aviso</a>` : ''}
           ${Number(p.amount) > 0 && p.method !== 'demo' ? `<a class="btn" href="/api/account/payments/${p.id}/recibo" target="_blank">🧾 Comprobante</a>` : ''}<a class="btn" href="#/avisos">Mis avisos</a></p>`;
     } else if (p.status === 'pending' && p.method === 'transfer') {
