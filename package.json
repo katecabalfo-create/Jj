@@ -1,0 +1,21 @@
+{
+  "name": "maldonado-oportunidades",
+  "version": "1.0.0",
+  "description": "Maldonado Oportunidades: empleos, alquileres, avisos, noticias y eventos de Maldonado y Uruguay.",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "leaflet": "^1.9.4",
+    "multer": "^2.0.2",
+    "nodemailer": "^10.0.12"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "Maldonado Oportunidades",
+  "short_name": "MDO Oportunidades",
+  "description": "Empleos, alquileres, avisos, noticias y eventos de Maldonado y Uruguay",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f8fa",
+  "theme_color": "#0b6e8a",
+  "lang": "es-UY",
+  "icons": [{ "src": "/img/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

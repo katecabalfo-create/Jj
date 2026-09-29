@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Panel — Maldonado Oportunidades</title>
+    <link rel="icon" href="/img/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <style>
+      .admin-nav { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+      .admin-nav a { padding: 12px; text-decoration: none; color: var(--muted); font-weight: 600; border-bottom: 3px solid transparent; white-space: nowrap; }
+      .admin-nav a[aria-current='page'] { color: var(--primary); border-bottom-color: var(--primary); }
+      .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 16px 0; }
+      @media (min-width: 800px) { .stats { grid-template-columns: repeat(4, 1fr); } }
+      .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; text-decoration: none; color: inherit; }
+      .stat b { display: block; font-size: 1.6rem; }
+      .stat span { color: var(--muted); font-size: 0.88rem; }
+      .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+      th, td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+      th { background: var(--surface-2); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
+      td.actions { white-space: nowrap; }
+      tr:last-child td { border-bottom: 0; }
+      .admin-filters { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; margin: 12px 0; }
+      @media (min-width: 800px) { .admin-filters { grid-template-columns: 2fr repeat(4, 1fr) auto; } }
+      .admin-filters .full { grid-column: 1 / -1; }
+      @media (min-width: 800px) { .admin-filters .full { grid-column: auto; } }
+      .bulk { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+      .alert { padding: 12px 14px; border-radius: 12px; margin: 12px 0; background: #fff4d6; color: #5c4200; }
+      .login { max-width: 380px; margin: 12vh auto; }
+      .title-cell a { font-weight: 700; text-decoration: none; }
+      .thumb { width: 56px; height: 42px; object-fit: cover; border-radius: 6px; background: var(--surface-2); }
+      pre.mail { white-space: pre-wrap; font-size: 0.85rem; margin: 6px 0 0; }
+      fieldset { border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 0 0 16px; }
+      legend { font-weight: 700; padding: 0 6px; }
+    </style>
+  </head>
+  <body>
+    <header class="site-header" id="admin-header" hidden>
+      <div class="wrap header-row">
+        <a class="brand" href="#/"><img src="/img/icon.svg" alt="" width="32" height="32" /><span class="brand-text"><strong>Panel</strong> Maldonado Oportunidades</span></a>
+        <div class="header-actions">
+          <a class="btn btn-ghost btn-sm" href="/" target="_blank">Ver sitio ↗</a>
+          <button class="btn btn-sm" id="logout">Salir</button>
+        </div>
+      </div>
+      <nav class="tabs"><div class="wrap admin-nav" id="admin-nav">
+        <a href="#/">📊 Resumen</a>
+        <a href="#/avisos?status=pending&payment=ready">⏳ Pendientes</a>
+        <a href="#/avisos">📋 Avisos</a>
+        <a href="#/avisos/nuevo">＋ Nuevo</a>
+        <a href="#/usuarios">👥 Anunciantes</a>
+        <a href="#/pagos">💳 Pagos</a>
+        <a href="#/planes">🏷️ Planes y precios</a>
+        <a href="#/alertas">🔔 Notificaciones</a>
+        <a href="#/ajustes">⚙️ Ajustes y AdSense</a>
+      </div></nav>
+    </header>
+    <main class="wrap" id="view"></main>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script src="/js/shared.js" defer></script>
+    <script src="/admin/admin.js" defer></script>
+  </body>
+</html>
