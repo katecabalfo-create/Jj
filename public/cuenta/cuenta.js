@@ -152,6 +152,7 @@
 
   function loginView(params) {
     view.innerHTML = `<form class="panel auth-box" id="login" novalidate>
+      <img class="auth-logo" src="/img/icon.svg" alt="Maldonado Oportunidades" width="56" height="56">
       <h1>Ingresar a mi panel</h1>
       <div class="field"><label for="l-email">Email</label><input id="l-email" name="email" type="email" autocomplete="email" required></div>
       <div class="field"><label for="l-pw">Contraseña</label><input id="l-pw" name="password" type="password" autocomplete="current-password" required></div>
@@ -174,6 +175,7 @@
   function registerView(params) {
     const t = type(params.tipo) || META.accountTypes[0];
     view.innerHTML = `<form class="panel auth-box" id="register" novalidate>
+      <img class="auth-logo" src="/img/icon.svg" alt="Maldonado Oportunidades" width="56" height="56">
       <h1>${t.icon} Cuenta de ${esc(t.label.toLowerCase())}</h1>
       <p class="muted" style="margin-top:0">${esc(t.pitch)}</p>
       <div class="field"><label>Tipo de cuenta</label><select name="type">${META.accountTypes.map((x) => `<option value="${x.id}" ${x.id === t.id ? 'selected' : ''}>${x.icon} ${esc(x.label)}</option>`).join('')}</select></div>
@@ -183,6 +185,7 @@
       <div class="field"><label for="r-phone">Teléfono / WhatsApp</label><input id="r-phone" name="phone" type="tel" autocomplete="tel"></div>
       <div class="field"><label for="r-email">Email *</label><input id="r-email" name="email" type="email" autocomplete="email" required></div>
       <div class="field"><label for="r-pw">Contraseña * <small>(mínimo 8 caracteres)</small></label><input id="r-pw" name="password" type="password" autocomplete="new-password" required minlength="8"></div>
+      <div class="field"><label class="check"><input type="checkbox" name="marketing_opt_in" value="1" checked> Quiero recibir novedades y promociones por email (podés darte de baja cuando quieras).</label></div>
       <div class="field"><label class="check"><input type="checkbox" name="accept_terms" value="on"> Acepto las <a href="/#/terminos" target="_blank">condiciones de uso</a> y la <a href="/#/privacidad" target="_blank">política de privacidad</a>.</label></div>
       <button class="btn btn-primary" style="width:100%">Crear cuenta</button>
       <p style="text-align:center;font-size:.92rem">¿Ya tenés cuenta? <a href="#/ingresar">Ingresá</a></p>
@@ -192,6 +195,7 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const body = Object.fromEntries(new FormData(form));
+      body.marketing_opt_in = form.marketing_opt_in.checked;
       try {
         const r = await api('/api/account/register', { method: 'POST', json: body });
         USER = r.user;
@@ -757,6 +761,7 @@
           <div class="field"><label>Sitio web</label><input name="website" value="${esc(USER.website)}"></div>
           <div class="field"><label>Dirección de facturación <small>(aparece en tus comprobantes junto al RUT)</small></label><input name="billing_address" value="${esc(USER.billing_address || '')}" maxlength="200"></div>
           <div class="field"><label>Sobre ${USER.type === 'empresa' ? 'la empresa' : 'vos'} <small>(se muestra en tu página pública)</small></label><textarea name="about" rows="4">${esc(USER.about)}</textarea></div>
+          <label class="check" style="margin-bottom:14px"><input type="checkbox" name="marketing_opt_in" ${USER.marketing_opt_in ? 'checked' : ''}> Recibir novedades y promociones por email</label>
           <button class="btn btn-primary" style="width:100%">Guardar perfil</button>
         </form>
         <form id="password" class="panel" style="margin-top:16px" novalidate>
@@ -770,7 +775,9 @@
     $('#profile').addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        const r = await api('/api/account/me', { method: 'PUT', json: Object.fromEntries(new FormData(e.target)) });
+        const data = Object.fromEntries(new FormData(e.target));
+        data.marketing_opt_in = e.target.marketing_opt_in.checked;
+        const r = await api('/api/account/me', { method: 'PUT', json: data });
         USER = r.user;
         toast('Perfil guardado');
       } catch (err) {

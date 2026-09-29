@@ -52,8 +52,10 @@ function footer(sub, baseUrl) {
   return `\n\n—\nRecibís este correo porque configuraste alertas en Maldonado Oportunidades.\nModificar o cancelar: ${baseUrl}/#/alertas?token=${sub.token}\nDarte de baja: ${baseUrl}/api/subscriptions/${sub.token}/unsubscribe`;
 }
 
-function enqueueEmail(db, to, subject, body) {
-  db.prepare('INSERT INTO outbox (to_email, subject, body) VALUES (?, ?, ?)').run(to, subject, body);
+function enqueueEmail(db, to, subject, body, { html = '', campaignId = null, unsubscribeUrl = '' } = {}) {
+  db.prepare('INSERT INTO outbox (to_email, subject, body, html, campaign_id, unsubscribe_url) VALUES (?, ?, ?, ?, ?, ?)').run(
+    to, subject, body, html, campaignId, unsubscribeUrl,
+  );
 }
 
 /** Se llama cuando un aviso pasa a "aprobado". */
@@ -117,11 +119,15 @@ async function flushOutbox(db) {
   const t = getTransporter();
   if (!t) return { sent: 0, pending: db.prepare("SELECT COUNT(*) n FROM outbox WHERE status = 'queued'").get().n };
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
-  const rows = db.prepare("SELECT * FROM outbox WHERE status = 'queued' ORDER BY id LIMIT 50").all();
+  const rows = db.prepare("SELECT * FROM outbox WHERE status = 'queued' ORDER BY id LIMIT 200").all();
   let sent = 0;
   for (const m of rows) {
     try {
-      await t.sendMail({ from, to: m.to_email, subject: m.subject, text: m.body });
+      const msg = { from, to: m.to_email, subject: m.subject, text: m.body };
+      if (m.html) msg.html = m.html;
+      // Las promociones incluyen la baja con un clic que ofrecen Gmail y otros clientes de correo
+      if (m.unsubscribe_url) msg.list = { unsubscribe: { url: m.unsubscribe_url, comment: 'Dejar de recibir promociones' } };
+      await t.sendMail(msg);
       db.prepare("UPDATE outbox SET status = 'sent', sent_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), error = '' WHERE id = ?").run(m.id);
       sent++;
     } catch (err) {

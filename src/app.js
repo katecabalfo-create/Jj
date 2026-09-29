@@ -13,6 +13,7 @@ const { notifyNewListing, buildDigests, flushOutbox, smtpConfigured, enqueueEmai
 const auth = require('./auth');
 const payments = require('./payments');
 const { createAccountRouter, publicAdvertiser, renderReceipt } = require('./account');
+const { createCrm } = require('./crm');
 const { ACCOUNT_TYPES, ACCOUNT_TYPE_IDS } = require('./categories');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -37,7 +38,7 @@ function rateLimiter(max, windowMs) {
 }
 
 function createApp(db, options = {}) {
-  const uploadDir = options.uploadDir || path.join(__dirname, '..', 'uploads');
+  const uploadDir = options.uploadDir || process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
   const receiptDir = options.receiptDir || process.env.RECEIPTS_DIR || path.join(__dirname, '..', 'data', 'receipts');
   fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -171,7 +172,8 @@ function createApp(db, options = {}) {
 <title>${escapeHtml(l.title)} | ${escapeHtml(s.site_name)}</title>
 <meta name="description" content="${desc}">
 <meta property="og:title" content="${escapeHtml(l.title)}"><meta property="og:description" content="${desc}">
-${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
+<meta property="og:image" content="${escapeHtml(img || `${baseUrl(req)}/img/og-image.png`)}"><meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/img/icon.svg" type="image/svg+xml">
 <meta http-equiv="refresh" content="0; url=/#/aviso/${l.id}"></head>
 <body><h1>${escapeHtml(l.title)}</h1><p>${escapeHtml(l.description)}</p><a href="/#/aviso/${l.id}">Ver aviso</a></body></html>`);
   });
@@ -719,6 +721,11 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
     db.prepare('UPDATE plans SET active = 0 WHERE id = ?').run(Number(req.params.id));
     res.json({ ok: true });
   });
+
+  // CRM de anunciantes: contactos, segmentos y campañas de email
+  const crm = createCrm(db, { baseUrl, requireAdmin: auth.requireAdmin });
+  app.use('/api/crm', crm.pub);
+  app.use('/api/admin/crm', crm.admin);
 
   app.use('/api/admin', admin);
 

@@ -77,6 +77,21 @@ Para probar todo el recorrido sin cobrar, arrancá con `PAYMENTS_DEMO=1`: aparec
 - **Compartir en redes**: botones de WhatsApp, Facebook, X, Telegram y LinkedIn (este último solo en empleos), más uno para copiar el enlace.
 - **Empleos destacados en la portada**: una sección al inicio con los últimos empleos destacados de Maldonado y del resto del país.
 
+## CRM de anunciantes
+
+En **Admin → 📇 CRM** tenés todos los anunciantes y las herramientas para enviarles promociones por email.
+
+- **Contactos**: cada anunciante con su tipo de cuenta, avisos publicados, cuánto pagó, último pago y si acepta promociones. Se puede buscar y filtrar por tipo de cuenta, actividad (con avisos publicados, sin avisos, con avisos vencidos, con avisos sin pagar, que nunca pagaron o que pagaron alguna vez), etiqueta, días sin entrar y fecha de alta. La lista se exporta a CSV.
+- **Ficha de cada contacto**: datos, **etiquetas** (por ejemplo "inmobiliaria" o "cliente VIP"), **notas internas**, sus avisos, pagos y las campañas que recibió (y si las abrió).
+- **Campañas de email**:
+  - Se arman con **plantillas** (promoción de destacados, volvé a publicar, temporada) o desde cero.
+  - Se personalizan con `{nombre}`, `{empresa}`, `{panel}` y `{publicar}`, y pueden llevar un botón con enlace.
+  - Tienen **vista previa**, **envío de prueba** a tu email y un contador de cuántos la van a recibir antes de enviar.
+  - Se ven los entregados y las **aperturas** de cada campaña.
+- **Bajas**: las promociones llegan solo a los anunciantes activos que las aceptan. Al registrarse eligen si quieren recibirlas (viene marcado) y pueden cambiarlo en su perfil. Cada email trae un enlace para darse de baja con un clic, que también aparece como botón de baja en Gmail y otros correos.
+
+Los emails salen por el mismo servidor de correo (SMTP) que el resto del sitio, en tandas de 200 cada 5 minutos.
+
 ## Cómo ejecutarlo
 
 Requiere **Node.js 22.13 o superior** (usa la base SQLite incluida en Node; no hace falta instalar una base de datos).
@@ -93,7 +108,28 @@ ADMIN_PASSWORD=tu-clave npm start
 
 La primera vez se cargan unos avisos de ejemplo para ver el sitio funcionando; borralos desde el panel o arrancá con `SEED=0`.
 
-### Con Docker
+### Publicarlo en Railway (recomendado)
+
+1. Creá una cuenta en https://railway.com entrando con tu usuario de GitHub.
+2. **New Project → Deploy from GitHub repo** → elegí este repositorio. Railway usa el `Dockerfile` automáticamente.
+3. En el servicio, entrá a **Settings → Volumes → New Volume** y montalo en `/app/data`. Ahí quedan la base de datos, las fotos y los comprobantes.
+4. En **Variables** cargá:
+
+   | Variable | Valor |
+   |---|---|
+   | `ADMIN_PASSWORD` | la contraseña del panel |
+   | `SESSION_SECRET` | un texto largo inventado (40 letras y números al azar) |
+   | `NODE_ENV` | `production` |
+   | `UPLOADS_DIR` | `/app/data/uploads` |
+   | `SEED` | `0` (así arranca sin avisos de ejemplo) |
+   | `BASE_URL` | `https://tu-dominio` (ver el paso 5) |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | los datos de tu servicio de email |
+   | `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | las credenciales de Mercado Pago |
+
+5. En **Settings → Networking**, tocá **Generate Domain** para tener una dirección `*.up.railway.app`, o **Custom Domain** para usar tu dominio. Si usás tu dominio, Railway te indica el registro CNAME que tenés que cargar donde lo compraste. Poné esa dirección en `BASE_URL`.
+6. Cada vez que se une un cambio a `main`, Railway vuelve a publicar el sitio solo.
+
+
 
 ```bash
 docker build -t maldonado-oportunidades .
@@ -123,6 +159,7 @@ src/listings.js      búsqueda, filtros, orden, paginación y validación
 src/notify.js        alertas por email y resúmenes
 src/account.js       API de cuentas de anunciantes (registro, avisos propios, pagos)
 src/payments.js      Mercado Pago, transferencias y aplicación de pagos
+src/crm.js           CRM: contactos, segmentos, notas, etiquetas y campañas de email
 src/db.js            esquema SQLite y ajustes
 src/categories.js    secciones, localidades y departamentos
 public/              sitio público (HTML/CSS/JS sin frameworks)

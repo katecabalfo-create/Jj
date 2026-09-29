@@ -69,7 +69,7 @@
     const h = location.hash || '#/';
     $$('#admin-nav a').forEach((a) => {
       const href = a.getAttribute('href');
-      const on = href === h || (href === '#/avisos' && h.startsWith('#/avisos') && !h.includes('payment=ready') && !h.startsWith('#/avisos/nuevo'));
+      const on = href === h || (href === '#/avisos' && h.startsWith('#/avisos') && !h.includes('payment=ready') && !h.startsWith('#/avisos/nuevo')) || (href === '#/crm' && h.startsWith('#/crm'));
       a.toggleAttribute('aria-current', on);
       if (on) a.setAttribute('aria-current', 'page');
     });
@@ -79,7 +79,8 @@
   function showLogin() {
     $('#admin-header').hidden = true;
     view.innerHTML = `<form class="panel login" id="login-form">
-      <h1>🔐 Panel de administración</h1>
+      <img class="auth-logo" src="/img/icon.svg" alt="Maldonado Oportunidades" width="56" height="56">
+      <h1>Panel de administración</h1>
       <div class="field"><label for="pw">Contraseña</label><input id="pw" name="password" type="password" autocomplete="current-password" required autofocus></div>
       <button class="btn btn-primary" style="width:100%">Entrar</button>
     </form>`;
@@ -660,6 +661,7 @@
       else if (parts[0] === 'pagos') await paymentsView(params);
       else if (parts[0] === 'planes') await plansView();
       else if (parts[0] === 'ajustes') await settingsView();
+      else if (parts[0] === 'crm') await window.MO_CRM.route(parts, params);
       else location.hash = '#/';
     } catch (err) {
       if (err.message !== 'Sesión vencida') view.innerHTML = `<div class="empty" style="margin:20px 0">Error: ${esc(err.message)}</div>`;
@@ -673,6 +675,9 @@
     $('#admin-header').hidden = false;
     route();
   }
+
+  // Utilidades que usa el módulo del CRM (crm.js)
+  window.MO_ADMIN = { api, esc, toast, $, $$, fmtDate, money, opt, hashFor, TYPES };
 
   window.addEventListener('hashchange', () => ME && ME.admin && route());
   $('#logout').addEventListener('click', async () => {

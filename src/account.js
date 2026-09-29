@@ -24,6 +24,7 @@ function publicUser(u, db) {
   const t = getAccountType(u.type);
   return {
     email_verified: Boolean(u.email_verified),
+    marketing_opt_in: Boolean(u.marketing_opt_in),
     needs_verification: !u.email_verified && Boolean(db) && verificationRequired(db),
     billing_address: u.billing_address,
     id: u.id,
@@ -65,6 +66,7 @@ function validateProfile(body, { partial = false } = {}) {
   str('location', 80);
   str('about', 2000);
   str('billing_address', 200);
+  if (body.marketing_opt_in !== undefined) data.marketing_opt_in = body.marketing_opt_in === true || body.marketing_opt_in === '1' || body.marketing_opt_in === 'on' ? 1 : 0;
   if ((!partial || body.name !== undefined) && (!data.name || data.name.length < 2)) errors.name = 'Indicá tu nombre.';
   if (data.website && !/^https?:\/\//i.test(data.website)) data.website = `https://${data.website}`;
   return { data, errors };
@@ -110,6 +112,7 @@ function createAccountRouter(db, { handleUpload, prepareImages, discardUploads, 
     if (!errors.email && db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) errors.email = 'Ya existe una cuenta con ese email. Iniciá sesión.';
     if (Object.keys(errors).length) return res.status(400).json({ error: 'Revisá los campos marcados.', fields: errors });
 
+    data.marketing_opt_in = body.marketing_opt_in === false || body.marketing_opt_in === '0' ? 0 : 1;
     const keys = Object.keys(data);
     const id = Number(
       db
@@ -428,6 +431,7 @@ function renderReceipt(db, pay) {
   @media print{button{display:none}body{margin:0}}
 </style></head><body>
 <div class="box">
+  <img src="/img/icon.svg" alt="Maldonado Oportunidades" width="48" height="48" style="display:block;margin-bottom:10px">
   <p class="muted" style="margin:0">${e(s.billing_name || s.site_name)}${s.billing_rut ? ` · RUT ${e(s.billing_rut)}` : ''}${s.billing_address ? ` · ${e(s.billing_address)}` : ''}</p>
   <h1>Comprobante de pago N.º ${pay.id}</h1>
   <table>

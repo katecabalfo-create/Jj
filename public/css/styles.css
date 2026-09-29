@@ -66,6 +66,7 @@ h2 { font-size: 1.2rem; }
 }
 .header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: var(--header-h); }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); min-width: 0; }
+.brand img { border-radius: 9px; flex-shrink: 0; box-shadow: 0 0 0 1px var(--border); }
 .brand-text { font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brand-text strong { color: var(--primary); }
 .header-actions { display: flex; gap: 8px; flex-shrink: 0; }
@@ -334,3 +335,6 @@ label { font-weight: 600; font-size: 0.92rem; }
 /* ---------- Empleos destacados ---------- */
 .featured-jobs { background: var(--primary-soft); border-radius: 18px; padding: 16px; margin: 16px 0; }
 .featured-jobs .section-head { margin-top: 0; }
+
+/* Logo en las pantallas de ingreso */
+.auth-logo { display: block; margin: 0 auto 12px; border-radius: 14px; }
