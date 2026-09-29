@@ -81,7 +81,7 @@ function applyPayment(db, paymentId, { providerPaymentId = '', note = '' } = {},
       `Pago confirmado #${pay.id}`,
       `Hola ${user.name}, confirmamos tu pago de ${pay.currency === 'USD' ? 'US$' : '$'} ${pay.amount} (${pay.description}).\n` +
         (listing ? `Tu aviso "${listing.title}" está activo hasta el ${db.prepare('SELECT expires_at FROM listings WHERE id = ?').get(listing.id).expires_at}.\n` : '') +
-        `Ver tu panel: ${baseUrl}/cuenta/`,
+        `Comprobante de pago: ${baseUrl}/cuenta/#/pagos/${pay.id}\nVer tu panel: ${baseUrl}/cuenta/`,
     );
   }
   return true;
@@ -117,10 +117,13 @@ async function createCheckout(db, { user, listing, plan, method, baseUrl }) {
   const id = Number(
     db
       .prepare(
-        `INSERT INTO payments (user_id, listing_id, plan_id, description, amount, currency, duration_days, featured, method)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO payments (user_id, listing_id, plan_id, description, amount, currency, duration_days, featured, method, invoice_name, invoice_rut, invoice_address)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(user.id, listing.id, plan.id, description, plan.price, plan.currency, plan.duration_days, plan.featured, m).lastInsertRowid,
+      .run(
+        user.id, listing.id, plan.id, description, plan.price, plan.currency, plan.duration_days, plan.featured, m,
+        user.business_name || user.name, user.rut || '', user.billing_address || '',
+      ).lastInsertRowid,
   );
   if (listing.payment_status !== 'paid') updateListing(db, listing.id, { payment_status: 'unpaid' });
 

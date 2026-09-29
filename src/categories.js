@@ -4,11 +4,11 @@
 const CATEGORIES = [
   { id: 'empleo-maldonado', label: 'Empleo Maldonado', short: 'Empleo MDO', group: 'Ofertas de empleo', region: 'maldonado', subtypes: ['Tiempo completo', 'Medio horario', 'Zafral / temporada', 'Por horas', 'Pasantía'], hasPrice: true, priceLabel: 'Sueldo', icon: '💼' },
   { id: 'empleo-pais', label: 'Empleo resto del país', short: 'Empleo país', group: 'Ofertas de empleo', region: 'pais', subtypes: ['Tiempo completo', 'Medio horario', 'Zafral / temporada', 'Por horas', 'Pasantía'], hasPrice: true, priceLabel: 'Sueldo', icon: '🧳' },
-  { id: 'alquileres', label: 'Alquileres', short: 'Alquileres', group: 'Alquileres', region: 'maldonado', subtypes: ['Anual', 'Temporada', 'Por día / fin de semana', 'Habitación', 'Local comercial'], hasPrice: true, priceLabel: 'Precio', icon: '🏠' },
+  { id: 'alquileres', label: 'Alquileres', short: 'Alquileres', group: 'Alquileres', region: 'maldonado', subtypes: ['Anual', 'Temporada', 'Por día / fin de semana', 'Habitación', 'Local comercial'], hasMap: true, hasPrice: true, priceLabel: 'Precio', icon: '🏠' },
   { id: 'avisos-maldonado', label: 'Avisos Maldonado', short: 'Avisos MDO', group: 'Avisos publicitarios', region: 'maldonado', subtypes: ['Servicios', 'Venta', 'Compra', 'Vehículos', 'Inmuebles en venta', 'Otros'], hasPrice: true, priceLabel: 'Precio', icon: '📣' },
   { id: 'avisos-pais', label: 'Avisos resto del país', short: 'Avisos país', group: 'Avisos publicitarios', region: 'pais', subtypes: ['Servicios', 'Venta', 'Compra', 'Vehículos', 'Inmuebles en venta', 'Otros'], hasPrice: true, priceLabel: 'Precio', icon: '📢' },
   { id: 'noticias', label: 'Noticias', short: 'Noticias', group: 'Noticias', region: 'maldonado', subtypes: ['Locales', 'Nacionales', 'Economía', 'Turismo', 'Deportes', 'Cultura'], hasPrice: false, icon: '📰' },
-  { id: 'eventos', label: 'Eventos', short: 'Eventos', group: 'Eventos', region: 'maldonado', subtypes: ['Música', 'Gastronomía', 'Deportes', 'Ferias', 'Cultura', 'Infantiles'], hasPrice: true, priceLabel: 'Entrada', hasEventDate: true, icon: '🎉' },
+  { id: 'eventos', label: 'Eventos', short: 'Eventos', group: 'Eventos', region: 'maldonado', subtypes: ['Música', 'Gastronomía', 'Deportes', 'Ferias', 'Cultura', 'Infantiles'], hasPrice: true, priceLabel: 'Entrada', hasEventDate: true, hasMap: true, icon: '🎉' },
 ];
 
 const MALDONADO_LOCALITIES = [
@@ -24,6 +24,10 @@ const DEPARTMENTS = [
 ];
 
 const CATEGORY_IDS = CATEGORIES.map((c) => c.id);
+
+// Límites aproximados de Uruguay para validar las coordenadas del mapa.
+const UY_BOUNDS = { minLat: -35.2, maxLat: -30.0, minLng: -58.6, maxLng: -53.0 };
+const MAX_IMAGES = 8;
 
 // Tipos de cuenta de anunciante y las secciones donde puede publicar cada uno.
 const ACCOUNT_TYPES = [
@@ -68,4 +72,4 @@ function locationsFor(categoryId) {
   return cat.region === 'pais' ? DEPARTMENTS.filter((d) => d !== 'Maldonado') : MALDONADO_LOCALITIES;
 }
 
-module.exports = { ACCOUNT_TYPES, ACCOUNT_TYPE_IDS, getAccountType, CATEGORIES, CATEGORY_IDS, MALDONADO_LOCALITIES, DEPARTMENTS, getCategory, locationsFor };
+module.exports = { UY_BOUNDS, MAX_IMAGES, ACCOUNT_TYPES, ACCOUNT_TYPE_IDS, getAccountType, CATEGORIES, CATEGORY_IDS, MALDONADO_LOCALITIES, DEPARTMENTS, getCategory, locationsFor };

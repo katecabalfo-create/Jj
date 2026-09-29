@@ -3,7 +3,7 @@
 const { openDb } = require('./src/db');
 const { createApp } = require('./src/app');
 const { seedIfEmpty } = require('./src/seed');
-const { buildDigests, flushOutbox } = require('./src/notify');
+const { buildDigests, flushOutbox, sendExpiryReminders } = require('./src/notify');
 const { usingDefaultPassword } = require('./src/auth');
 
 const db = openDb();
@@ -24,6 +24,7 @@ const baseUrl = process.env.BASE_URL || `http://localhost:${port}`;
 setInterval(async () => {
   try {
     buildDigests(db, baseUrl);
+    sendExpiryReminders(db, baseUrl);
     await flushOutbox(db);
   } catch (err) {
     console.error('Error enviando notificaciones:', err);

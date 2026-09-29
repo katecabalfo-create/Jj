@@ -100,8 +100,42 @@
         data-ad-format="auto" data-full-width-responsive="true"></ins></div>`;
   }
 
+  // ---------- Consentimiento de cookies ----------
+  function getConsent() {
+    try {
+      return localStorage.getItem('mo_cookies');
+    } catch {
+      return null;
+    }
+  }
+
+  function renderCookieBar() {
+    if (!META.cookieBanner || getConsent()) return;
+    const bar = document.createElement('div');
+    bar.className = 'cookie-bar';
+    bar.setAttribute('role', 'dialog');
+    bar.setAttribute('aria-label', 'Aviso de cookies');
+    bar.innerHTML = `<p>Usamos cookies para que el sitio funcione y, si aceptás, para mostrarte anuncios personalizados de Google. <a href="#/privacidad">Más información</a>.</p>
+      <div class="actions"><button type="button" class="btn btn-sm" data-c="essential">Solo necesarias</button><button type="button" class="btn btn-sm btn-primary" data-c="all">Aceptar todas</button></div>`;
+    bar.querySelectorAll('[data-c]').forEach((b) =>
+      b.addEventListener('click', () => {
+        try {
+          localStorage.setItem('mo_cookies', b.dataset.c);
+        } catch {
+          /* sin almacenamiento: se vuelve a preguntar la próxima vez */
+        }
+        bar.remove();
+        if (b.dataset.c === 'all' && window.adsbygoogle) window.adsbygoogle.requestNonPersonalizedAds = 0;
+      }),
+    );
+    document.body.appendChild(bar);
+  }
+
   function activateAds(root = document) {
     if (!META.adsense) return;
+    // Sin consentimiento explícito, los anuncios se piden sin personalizar.
+    window.adsbygoogle = window.adsbygoogle || [];
+    window.adsbygoogle.requestNonPersonalizedAds = getConsent() === 'all' ? 0 : 1;
     $$('ins.adsbygoogle:not([data-adsbygoogle-status])', root).forEach((ins) => {
       if (ins.dataset.pushed) return;
       ins.dataset.pushed = '1';
@@ -145,8 +179,10 @@
     const img = l.image
       ? `<img class="card-img" src="${esc(l.image)}" alt="" loading="lazy">`
       : `<div class="card-img placeholder" aria-hidden="true">${c ? c.icon : '📌'}</div>`;
+    const photos = window.MO ? MO.parseImages(l).length : 0;
     return `<a class="card" href="#/aviso/${l.id}">
       ${l.featured ? '<span class="badge badge-featured">★ Destacado</span>' : ''}
+      ${photos > 1 ? `<span class="photo-count">📷 ${photos}</span>` : ''}
       ${img}
       <div class="card-body">
         <div class="card-meta">
@@ -209,11 +245,22 @@
         </form>
       </section>
       <div class="quick">${quick}</div>
+      <section class="featured-jobs" id="featured-jobs" hidden></section>
       <div id="home-sections">${['empleo-maldonado', 'alquileres', 'eventos', 'noticias'].map(() => '<div class="skeleton" style="margin:16px 0"></div>').join('')}</div>`;
     $('#home-search').addEventListener('submit', (e) => {
       e.preventDefault();
       location.hash = buildHash('/buscar', { q: new FormData(e.target).get('q').trim() });
     });
+
+    api('/api/listings?categories=empleo-maldonado,empleo-pais&featured=1&sort=recent&pageSize=6')
+      .then((d) => {
+        if (!d.items.length) return;
+        const box = $('#featured-jobs');
+        if (!box) return;
+        box.innerHTML = `<div class="section-head"><h2>⭐ Empleos destacados</h2><a href="#/s/empleo-maldonado?featured=1">Ver más →</a></div>${gridHtml(d.items)}`;
+        box.hidden = false;
+      })
+      .catch(() => {});
 
     const sections = ['empleo-maldonado', 'empleo-pais', 'alquileres', 'avisos-maldonado', 'eventos', 'noticias'];
     const results = await Promise.all(
@@ -229,7 +276,9 @@
       </section>`;
       if (i === 1) html += adHtml(META.adsense && META.adsense.slotFeed);
     });
-    $('#home-sections').innerHTML =
+    const box = $('#home-sections');
+    if (!box) return; // el usuario ya navegó a otra vista
+    box.innerHTML =
       html || `<div class="empty"><div class="big">🌊</div><p>Todavía no hay publicaciones.</p><a class="btn btn-primary" href="#/publicar">Publicar el primero</a></div>`;
     activateAds(view);
   }
@@ -395,7 +444,7 @@
       <div class="breadcrumb"><a href="#/">Inicio</a> › <a href="#/s/${c.id}">${esc(c.label)}</a></div>
       <div class="detail">
         <article class="panel">
-          ${l.image ? `<img class="detail-img" src="${esc(l.image)}" alt="${esc(l.title)}">` : ''}
+          ${galleryHtml(MO.parseImages(l), l.title)}
           <div class="card-meta" style="margin-bottom:8px">
             ${l.featured ? '<span class="badge" style="background:var(--accent);color:var(--accent-ink)">★ Destacado</span>' : ''}
             ${l.subtype ? `<span class="badge">${esc(l.subtype)}</span>` : ''}
@@ -406,6 +455,8 @@
           ${l.company ? `<p class="muted" style="margin-top:0">${esc(l.company)}</p>` : ''}
           ${price ? `<p class="price" style="font-size:1.4rem;margin:.2rem 0 1rem">${esc(price)}</p>` : ''}
           <div class="detail-desc">${esc(l.description)}</div>
+          ${l.lat != null && l.lng != null ? `<div class="detail-map"><h2 style="font-size:1rem;margin-top:16px">📍 Ubicación${l.location ? `: ${esc(l.location)}` : ''}</h2><div class="mo-map" id="detail-map" aria-label="Mapa de la ubicación"></div>
+            <a href="https://www.google.com/maps/search/?api=1&query=${l.lat},${l.lng}" target="_blank" rel="noopener">Abrir en Google Maps</a> · <a href="https://www.openstreetmap.org/?mlat=${l.lat}&mlon=${l.lng}#map=16/${l.lat}/${l.lng}" target="_blank" rel="noopener">OpenStreetMap</a></div>` : ''}
           ${adHtml(META.adsense && META.adsense.slotDetail)}
         </article>
         <aside class="panel">
@@ -422,14 +473,16 @@
             ${wa ? `<a class="btn" href="https://wa.me/${esc(wa)}?text=${encodeURIComponent(`Hola, vi tu aviso "${l.title}" en Maldonado Oportunidades`)}" target="_blank" rel="noopener">💬 WhatsApp</a>` : ''}
             ${l.contact_email ? `<a class="btn" href="mailto:${esc(l.contact_email)}?subject=${encodeURIComponent(l.title)}">✉️ ${esc(l.contact_email)}</a>` : ''}
             ${l.website ? `<a class="btn" href="${esc(l.website)}" target="_blank" rel="noopener nofollow">🔗 Sitio web</a>` : ''}
-            <button class="btn btn-ghost" id="share">↗️ Compartir</button>
           </div>
+          <div class="share"><span class="muted" style="font-size:.88rem;font-weight:600">Compartir este aviso</span>
+            <div class="share-row">${shareLinks(shareUrl, l).map(([label, href, title]) => `<a class="btn btn-sm" href="${esc(href)}" target="_blank" rel="noopener" title="${esc(title)}">${label}</a>`).join('')}
+              <button class="btn btn-sm" id="share" type="button" title="Copiar enlace">🔗 Copiar</button></div></div>
         </aside>
       </div>
       ${l.related && l.related.length ? `<section class="related"><div class="section-head"><h2>Más en ${esc(c.label)}</h2><a href="#/s/${c.id}">Ver todo →</a></div>${gridHtml(l.related.map((r) => ({ ...r, description: '', subtype: '' })))}</section>` : ''}`;
     $('#share').addEventListener('click', async () => {
       try {
-        if (navigator.share) await navigator.share({ title: l.title, url: shareUrl });
+        if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: l.title, url: shareUrl });
         else {
           await navigator.clipboard.writeText(shareUrl);
           toast('Enlace copiado');
@@ -438,8 +491,43 @@
         /* cancelado */
       }
     });
+    bindGallery(view);
+    if ($('#detail-map')) MO.mapView($('#detail-map'), l.lat, l.lng);
     activateAds(view);
     window.scrollTo(0, 0);
+  }
+
+  function galleryHtml(images, title) {
+    if (!images.length) return '';
+    if (images.length === 1) return `<img class="detail-img" src="${esc(images[0])}" alt="${esc(title)}">`;
+    return `<div class="gallery">
+      <div class="gallery-track" tabindex="0" aria-label="Fotos del aviso">${images.map((u, i) => `<img src="${esc(u)}" alt="${esc(title)} — foto ${i + 1} de ${images.length}" loading="${i ? 'lazy' : 'eager'}">`).join('')}</div>
+      <div class="gallery-thumbs">${images.map((u, i) => `<button type="button" data-i="${i}" aria-label="Ver foto ${i + 1}" aria-current="${i === 0}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>
+    </div>`;
+  }
+
+  function bindGallery(root) {
+    const track = $('.gallery-track', root);
+    if (!track) return;
+    const thumbs = $$('.gallery-thumbs button', root);
+    thumbs.forEach((b) => b.addEventListener('click', () => track.scrollTo({ left: track.clientWidth * Number(b.dataset.i), behavior: 'smooth' })));
+    track.addEventListener('scroll', () => {
+      const i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+      thumbs.forEach((b, j) => b.setAttribute('aria-current', String(i === j)));
+    }, { passive: true });
+  }
+
+  function shareLinks(url, l) {
+    const u = encodeURIComponent(url);
+    const text = encodeURIComponent(`${l.title} — Maldonado Oportunidades`);
+    const links = [
+      ['💬 WhatsApp', `https://wa.me/?text=${text}%20${u}`, 'Compartir por WhatsApp'],
+      ['Facebook', `https://www.facebook.com/sharer/sharer.php?u=${u}`, 'Compartir en Facebook'],
+      ['X', `https://twitter.com/intent/tweet?url=${u}&text=${text}`, 'Compartir en X'],
+      ['Telegram', `https://t.me/share/url?url=${u}&text=${text}`, 'Compartir por Telegram'],
+    ];
+    if (l.category.startsWith('empleo')) links.push(['LinkedIn', `https://www.linkedin.com/sharing/share-offsite/?url=${u}`, 'Compartir en LinkedIn']);
+    return links;
   }
 
   function fieldError(form, fields) {
@@ -450,7 +538,7 @@
     });
     let first = null;
     for (const [name, msg] of Object.entries(fields || {})) {
-      const input = form.elements[name] || (name === 'contact' ? form.elements.contact_phone : null) || (name === 'image' ? form.elements.imageFile : null);
+      const input = form.elements[name] || (name === 'contact' ? form.elements.contact_phone : null) || (name === 'image' ? form.querySelector('.pm-add') : null) || (name === 'map' ? form.querySelector('.mo-map') : null);
       const field = input && (input.closest ? input.closest('.field') : input[0] && input[0].closest('.field'));
       if (!field) continue;
       field.classList.add('invalid');
@@ -505,7 +593,9 @@
             <div class="field"><label for="p-currency">Moneda</label><select id="p-currency" name="currency"><option value="UYU">Pesos uruguayos ($)</option><option value="USD">Dólares (US$)</option></select></div>
           </div>
           <div class="field" id="event-field" hidden><label for="p-event">Fecha del evento *</label><input id="p-event" type="date" name="event_date"></div>
-          <div class="field"><label for="p-image">Foto <small>(opcional, máx. 5 MB)</small></label><input id="p-image" type="file" name="imageFile" accept="image/jpeg,image/png,image/webp,image/gif"><img id="img-preview" class="img-preview" alt="" hidden></div>
+          <div class="field"><label>Fotos <small>(opcional)</small></label><div id="p-photos"></div></div>
+          <div class="field" id="map-field" hidden><label>Ubicación en el mapa <small>(opcional)</small></label><div id="p-map"></div>
+            <input type="hidden" name="lat"><input type="hidden" name="lng"></div>
           <h2 style="margin-top:8px">Datos de contacto</h2>
           <div class="field"><label for="p-cname">Nombre</label><input id="p-cname" name="contact_name" maxlength="120" autocomplete="name"></div>
           <div class="row-2">
@@ -528,20 +618,17 @@
       $('#price-label').textContent = c.priceLabel || 'Precio';
       $('#event-field').hidden = !c.hasEventDate;
       $('#company-field').hidden = c.id === 'noticias';
+      $('#map-field').hidden = !c.hasMap;
+      if (c.hasMap && !mapReady) {
+        mapReady = true;
+        MO.mapPicker($('#p-map'), { bounds: META.uyBounds, latInput: form.elements.lat, lngInput: form.elements.lng });
+      }
     }
+    let mapReady = false;
+    const photos = MO.photoManager($('#p-photos'), { max: META.maxImages, onMessage: toast });
     $$('input[name="category"]', form).forEach((r) => r.addEventListener('change', syncCategory));
     syncCategory();
     $('#p-description').addEventListener('input', (e) => ($('#desc-count').textContent = e.target.value.length));
-    $('#p-image').addEventListener('change', (e) => {
-      const f = e.target.files[0];
-      const prev = $('#img-preview');
-      if (f && f.size > 5 * 1024 * 1024) {
-        toast('La imagen supera los 5 MB');
-        e.target.value = '';
-      }
-      prev.hidden = !e.target.files[0];
-      if (e.target.files[0]) prev.src = URL.createObjectURL(e.target.files[0]);
-    });
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -549,7 +636,13 @@
       btn.disabled = true;
       btn.textContent = 'Enviando…';
       try {
-        const res = await api('/api/listings', { method: 'POST', body: new FormData(form) });
+        const fd = new FormData(form);
+        photos.apply(fd);
+        if ($('#map-field').hidden) {
+          fd.delete('lat');
+          fd.delete('lng');
+        }
+        const res = await api('/api/listings', { method: 'POST', body: fd });
         view.innerHTML = `<div class="form-page"><div class="empty"><div class="big">✅</div>
           <h1>¡Gracias por publicar!</h1>
           <p>${res.status === 'approved' ? 'Tu aviso ya está publicado.' : 'Tu aviso quedó pendiente de revisión y aparecerá en el sitio una vez aprobado.'}</p>
@@ -676,9 +769,20 @@
       <h2>Publicidad y cookies</h2>
       <p>Este sitio utiliza Google AdSense para mostrar anuncios. Google y sus socios utilizan cookies para mostrar anuncios basados en tus visitas anteriores a este y otros sitios web. Podés desactivar la publicidad personalizada en <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener">Configuración de anuncios de Google</a> o en <a href="https://www.aboutads.info" target="_blank" rel="noopener">www.aboutads.info</a>.</p>
       <p>Más información sobre cómo Google usa los datos: <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener">policies.google.com/technologies/partner-sites</a>.</p>
+      <p>Si no aceptás las cookies de publicidad, los anuncios se muestran sin personalizar. <button type="button" class="btn btn-sm" id="reset-cookies">Cambiar mi elección de cookies</button></p>
+      <h2>Mapas</h2>
+      <p>Los mapas de ubicación usan OpenStreetMap. Al verlos, tu navegador descarga los mapas desde sus servidores.</p>
       <h2>Tus derechos</h2>
       <p>Podés solicitar el acceso, rectificación o eliminación de tus datos${META.contactEmail ? ` escribiendo a <a href="mailto:${esc(META.contactEmail)}">${esc(META.contactEmail)}</a>` : ' contactándonos'}. Las alertas se pueden cancelar en cualquier momento desde el enlace incluido en cada email.</p>
     </article>`;
+    $('#reset-cookies').addEventListener('click', () => {
+      try {
+        localStorage.removeItem('mo_cookies');
+      } catch {
+        /* sin almacenamiento */
+      }
+      renderCookieBar();
+    });
   }
 
   function termsView() {
@@ -734,6 +838,7 @@
       view.innerHTML = '<div class="empty" style="margin:24px 0"><p>No se pudo conectar con el servidor. Recargá la página.</p></div>';
       return;
     }
+    renderCookieBar();
     renderTopAd();
     lastPath = location.hash.split('?')[0];
     route();

@@ -286,3 +286,51 @@ label { font-weight: 600; font-size: 0.92rem; }
 }
 .advertiser span { font-size: 0.8rem; color: var(--muted); }
 .advertiser small { color: var(--primary); font-weight: 600; }
+
+/* ---------- Gestor de fotos ---------- */
+.pm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.pm-grid:empty { display: none; }
+.pm-item { position: relative; margin: 0; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
+.pm-item img { width: 100%; height: 100%; object-fit: cover; }
+.pm-cover { position: absolute; left: 6px; bottom: 6px; background: var(--accent); color: var(--accent-ink); font-size: 0.7rem; font-weight: 800; padding: 1px 7px; border-radius: 999px; }
+.pm-btn { position: absolute; top: 6px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, 0.6); color: #fff; cursor: pointer; font-size: 0.85rem; }
+.pm-del { right: 6px; }
+.pm-first { left: 6px; }
+.pm-hint { display: block; margin-top: 4px; }
+
+/* ---------- Mapa ---------- */
+.mo-map { height: 260px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); z-index: 0; }
+.mo-map-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; margin-top: 6px; color: var(--muted); }
+.mo-pin span { display: block; width: 22px; height: 22px; margin: 1px 3px; background: var(--primary); border: 3px solid #fff; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35); }
+.detail-map { margin-top: 14px; }
+.detail-map .mo-map { height: 220px; }
+.detail-map a { font-size: 0.88rem; }
+
+/* ---------- Galería del aviso ---------- */
+.gallery { margin-bottom: 14px; }
+.gallery-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; border-radius: 12px; scrollbar-width: none; background: var(--surface-2); }
+.gallery-track::-webkit-scrollbar { display: none; }
+.gallery-track img { flex: 0 0 100%; width: 100%; max-height: 440px; aspect-ratio: 4 / 3; object-fit: cover; scroll-snap-align: center; }
+.gallery-thumbs { display: flex; gap: 6px; margin-top: 8px; overflow-x: auto; }
+.gallery-thumbs button { flex: 0 0 64px; height: 48px; padding: 0; border: 2px solid transparent; border-radius: 8px; overflow: hidden; cursor: pointer; background: none; }
+.gallery-thumbs button[aria-current='true'] { border-color: var(--primary); }
+.gallery-thumbs img { width: 100%; height: 100%; object-fit: cover; }
+.photo-count { position: absolute; right: 10px; top: 10px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+
+/* ---------- Compartir ---------- */
+.share { display: grid; gap: 8px; margin-top: 14px; }
+.share-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.share-row a, .share-row button { flex: 1 1 auto; min-width: 44px; }
+
+/* ---------- Aviso de cookies ---------- */
+.cookie-bar {
+  position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 70; max-width: 720px; margin: 0 auto;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+  padding: 14px 16px; display: grid; gap: 10px;
+}
+.cookie-bar p { margin: 0; font-size: 0.92rem; }
+.cookie-bar .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+
+/* ---------- Empleos destacados ---------- */
+.featured-jobs { background: var(--primary-soft); border-radius: 18px; padding: 16px; margin: 16px 0; }
+.featured-jobs .section-head { margin-top: 0; }

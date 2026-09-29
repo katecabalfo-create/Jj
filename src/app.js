@@ -6,13 +6,13 @@ const crypto = require('node:crypto');
 const express = require('express');
 const multer = require('multer');
 
-const { CATEGORIES, MALDONADO_LOCALITIES, DEPARTMENTS, getCategory, locationsFor } = require('./categories');
+const { CATEGORIES, MALDONADO_LOCALITIES, DEPARTMENTS, getCategory, locationsFor, MAX_IMAGES, UY_BOUNDS } = require('./categories');
 const { getSettings, setSettings, token } = require('./db');
 const { PUBLIC_WHERE, searchListings, getPublicListing, validateListing, insertListing, updateListing } = require('./listings');
 const { notifyNewListing, buildDigests, flushOutbox, smtpConfigured, enqueueEmail } = require('./notify');
 const auth = require('./auth');
 const payments = require('./payments');
-const { createAccountRouter, publicAdvertiser } = require('./account');
+const { createAccountRouter, publicAdvertiser, renderReceipt } = require('./account');
 const { ACCOUNT_TYPES, ACCOUNT_TYPE_IDS } = require('./categories');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -63,18 +63,59 @@ function createApp(db, options = {}) {
         cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`);
       },
     }),
-    limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+    limits: { fileSize: 5 * 1024 * 1024, files: MAX_IMAGES + 1 },
     fileFilter: (req, file, cb) => {
       if (['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimetype)) cb(null, true);
       else cb(new Error('Solo se aceptan imágenes JPG, PNG, WEBP o GIF.'));
     },
   });
 
+  // Acepta "imageFiles" (varias fotos) y "imageFile" (una, por compatibilidad).
   const handleUpload = (req, res, next) =>
-    upload.single('imageFile')(req, res, (err) => {
-      if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'La imagen supera los 5 MB.' : err.message });
+    upload.fields([{ name: 'imageFiles', maxCount: MAX_IMAGES }, { name: 'imageFile', maxCount: 1 }])(req, res, (err) => {
+      if (err) {
+        const msg = err.code === 'LIMIT_FILE_SIZE' ? 'Cada foto puede pesar hasta 5 MB.' : err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE' ? `Podés subir hasta ${MAX_IMAGES} fotos.` : err.message;
+        return res.status(400).json({ error: msg, fields: { image: msg } });
+      }
+      req.uploaded = [...((req.files && req.files.imageFile) || []), ...((req.files && req.files.imageFiles) || [])];
       next();
     });
+
+  const discardUploads = (req) => (req.uploaded || []).forEach((f) => fs.rm(f.path, () => {}));
+
+  /**
+   * Arma la lista de fotos del aviso: las que se conservan (keep_images, en orden) más las subidas.
+   * Si el formulario no toca las fotos, no cambia nada.
+   */
+  function prepareImages(req, input, current = null) {
+    const uploaded = (req.uploaded || []).map((f) => `/uploads/${f.filename}`);
+    const hasKeep = input.keep_images !== undefined;
+    const hasUrl = typeof input.image === 'string' && input.image.trim() !== '';
+    if (!uploaded.length && !hasKeep && !hasUrl) {
+      delete input.image;
+      return;
+    }
+    let keep = [];
+    if (hasKeep) {
+      try {
+        keep = JSON.parse(input.keep_images || '[]');
+      } catch {
+        keep = [];
+      }
+    } else if (current) {
+      try {
+        keep = JSON.parse(current.images || '[]');
+      } catch {
+        keep = [];
+      }
+      if (!keep.length && current.image) keep = [current.image];
+    }
+    if (!Array.isArray(keep)) keep = [];
+    if (hasUrl && !keep.includes(input.image.trim())) keep.unshift(input.image.trim());
+    input.images = JSON.stringify([...keep, ...uploaded]);
+    delete input.keep_images;
+    delete input.image;
+  }
 
   // ---------- Páginas con AdSense inyectado ----------
   const indexTemplate = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
@@ -136,6 +177,8 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
   });
 
   app.use('/uploads', express.static(uploadDir, { maxAge: '30d', fallthrough: false }));
+  // Leaflet (mapas) servido desde el propio sitio, sin depender de un CDN.
+  app.use('/vendor/leaflet', express.static(path.dirname(require.resolve('leaflet/dist/leaflet.js')), { maxAge: '30d', fallthrough: false }));
   app.use(express.static(PUBLIC_DIR, { index: false, maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0 }));
 
   // ---------- API pública ----------
@@ -148,6 +191,9 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
       pageSize: Number(s.page_size) || 12,
       categories: CATEGORIES.map((c) => ({ ...c, locations: locationsFor(c.id) })),
       accountTypes: ACCOUNT_TYPES,
+      maxImages: MAX_IMAGES,
+      uyBounds: UY_BOUNDS,
+      cookieBanner: s.cookie_banner === '1',
       freePosting: s.public_free_posting === '1',
       localities: MALDONADO_LOCALITIES,
       departments: DEPARTMENTS,
@@ -183,6 +229,10 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
     const l = getPublicListing(db, id);
     if (!l) return res.status(404).json({ error: 'Aviso no encontrado' });
     db.prepare('UPDATE listings SET views = views + 1 WHERE id = ?').run(id);
+    db.prepare(
+      `INSERT INTO listing_views_daily (listing_id, day, views) VALUES (?, date('now'), 1)
+       ON CONFLICT(listing_id, day) DO UPDATE SET views = views + 1`,
+    ).run(id);
     const related = db
       .prepare(
         `SELECT l.id, l.title, l.location, l.price, l.currency, l.image, l.category, l.featured, l.published_at FROM listings l
@@ -200,18 +250,18 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
     const body = req.body || {};
     if (body.hp_field) return res.status(201).json({ ok: true, id: 0, status: 'pending' }); // honeypot anti-spam
     if (settings().public_free_posting !== '1') {
-      if (req.file) fs.rm(req.file.path, () => {});
+      discardUploads(req);
       return res.status(403).json({ error: 'Para publicar creá una cuenta de anunciante.' });
     }
     const input = { ...body };
-    if (req.file) input.image = `/uploads/${req.file.filename}`;
     delete input.expires_at;
+    prepareImages(req, input);
     const { data, errors } = validateListing(input);
     if (body.accept_terms !== 'on' && body.accept_terms !== true && body.accept_terms !== '1') {
       errors.accept_terms = 'Tenés que aceptar las condiciones.';
     }
     if (Object.keys(errors).length) {
-      if (req.file) fs.rm(req.file.path, () => {});
+      discardUploads(req);
       return res.status(400).json({ error: 'Revisá los campos marcados.', fields: errors });
     }
     const s = settings();
@@ -243,7 +293,7 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
   });
 
   // ---------- Cuentas de anunciantes ----------
-  app.use('/api/account', createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDir }));
+  app.use('/api/account', createAccountRouter(db, { handleUpload, prepareImages, discardUploads, baseUrl, rateLimiter, receiptDir }));
 
   // ---------- Webhook de Mercado Pago ----------
   app.post('/api/payments/mercadopago/webhook', async (req, res) => {
@@ -413,10 +463,13 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
 
   admin.post('/listings', handleUpload, (req, res) => {
     const input = { ...req.body };
-    if (req.file) input.image = `/uploads/${req.file.filename}`;
+    prepareImages(req, input);
     const { data, errors } = validateListing(input);
     delete errors.contact; // el administrador puede publicar sin contacto
-    if (Object.keys(errors).length) return res.status(400).json({ error: 'Revisá los campos marcados.', fields: errors });
+    if (Object.keys(errors).length) {
+      discardUploads(req);
+      return res.status(400).json({ error: 'Revisá los campos marcados.', fields: errors });
+    }
     const status = ['pending', 'approved', 'rejected'].includes(req.body.status) ? req.body.status : 'approved';
     const featured = req.body.featured === '1' || req.body.featured === 'on' || req.body.featured === true ? 1 : 0;
     const id = insertListing(db, data, { status: 'pending', featured });
@@ -429,9 +482,12 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
     const cur = db.prepare('SELECT * FROM listings WHERE id = ?').get(id);
     if (!cur) return res.status(404).json({ error: 'No encontrado' });
     const input = { ...req.body };
-    if (req.file) input.image = `/uploads/${req.file.filename}`;
+    prepareImages(req, input, cur);
     const { data, errors } = validateListing(input, { partial: true });
-    if (Object.keys(errors).length) return res.status(400).json({ error: 'Revisá los campos marcados.', fields: errors });
+    if (Object.keys(errors).length) {
+      discardUploads(req);
+      return res.status(400).json({ error: 'Revisá los campos marcados.', fields: errors });
+    }
     if (req.body.featured !== undefined) data.featured = req.body.featured === '1' || req.body.featured === 'on' || req.body.featured === true ? 1 : 0;
     if (req.body.paused !== undefined) data.paused = req.body.paused === '1' || req.body.paused === true ? 1 : 0;
     if (['none', 'unpaid', 'paid'].includes(req.body.payment_status)) data.payment_status = req.body.payment_status;
@@ -519,7 +575,7 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
     }
     const rows = db
       .prepare(
-        `SELECT u.id, u.type, u.email, u.name, u.business_name, u.rut, u.phone, u.active, u.verified, u.created_at, u.last_login_at,
+        `SELECT u.id, u.type, u.email, u.name, u.business_name, u.rut, u.phone, u.active, u.verified, u.email_verified, u.created_at, u.last_login_at,
           (SELECT COUNT(*) FROM listings l WHERE l.user_id = u.id) AS listings,
           (SELECT COALESCE(SUM(amount),0) FROM payments p WHERE p.user_id = u.id AND p.status = 'approved' AND p.method <> 'demo') AS paid
          FROM users u ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY u.id DESC LIMIT 500`,
@@ -532,6 +588,7 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
     const b = req.body || {};
     if (b.active !== undefined) db.prepare('UPDATE users SET active = ? WHERE id = ?').run(b.active ? 1 : 0, id);
     if (b.verified !== undefined) db.prepare('UPDATE users SET verified = ? WHERE id = ?').run(b.verified ? 1 : 0, id);
+    if (b.email_verified !== undefined) db.prepare("UPDATE users SET email_verified = ?, verify_token_hash = '' WHERE id = ?").run(b.email_verified ? 1 : 0, id);
     if (b.password) {
       if (String(b.password).length < 8) return res.status(400).json({ error: 'Mínimo 8 caracteres' });
       db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(auth.hashPassword(b.password), id);
@@ -577,6 +634,47 @@ ${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
       .run(String(req.body?.note || 'Rechazado por el administrador').slice(0, 300), Number(req.params.id));
     res.json({ ok: r.changes > 0 });
   });
+  // Exportación para el contador (se abre en Excel).
+  admin.get('/payments.csv', (req, res) => {
+    const where = ["p.status = 'approved'", "p.method <> 'demo'"];
+    const args = [];
+    if (/^\d{4}-\d{2}$/.test(String(req.query.month || ''))) {
+      where.push("substr(p.paid_at, 1, 7) = ?");
+      args.push(req.query.month);
+    }
+    const rows = db
+      .prepare(
+        `SELECT p.*, u.email FROM payments p JOIN users u ON u.id = p.user_id WHERE ${where.join(' AND ')} ORDER BY p.paid_at`,
+      )
+      .all(...args);
+    const cell = (v) => {
+      let t = String(v ?? '');
+      if (/^[=+\-@]/.test(t)) t = `'${t}`; // evita fórmulas al abrirlo en Excel
+      return `"${t.replace(/"/g, '""')}"`;
+    };
+    const header = ['N.º pago', 'Fecha de pago', 'Cliente', 'RUT', 'Dirección', 'Email', 'Concepto', 'Medio', 'Moneda', 'Monto', 'Ref. Mercado Pago', 'E-factura'];
+    const lines = rows.map((p) =>
+      [p.id, (p.paid_at || '').slice(0, 10), p.invoice_name, p.invoice_rut, p.invoice_address, p.email, p.description, p.method, p.currency, String(p.amount).replace('.', ','), p.provider_payment_id, p.invoice_number]
+        .map(cell)
+        .join(';'),
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="pagos-${req.query.month || 'todos'}.csv"`);
+    res.type('text/csv; charset=utf-8').send('\ufeff' + [header.map(cell).join(';'), ...lines].join('\r\n'));
+  });
+
+  admin.put('/payments/:id/invoice', (req, res) => {
+    const num = String(req.body?.invoice_number || '').trim().slice(0, 60);
+    const r = db.prepare('UPDATE payments SET invoice_number = ? WHERE id = ?').run(num, Number(req.params.id));
+    if (!r.changes) return res.status(404).json({ error: 'No encontrado' });
+    res.json({ ok: true, invoice_number: num });
+  });
+
+  admin.get('/payments/:id/recibo', (req, res) => {
+    const pay = db.prepare("SELECT * FROM payments WHERE id = ? AND status = 'approved'").get(Number(req.params.id));
+    if (!pay) return res.status(404).type('text').send('Comprobante no disponible');
+    res.type('html').send(renderReceipt(db, pay));
+  });
+
   admin.get('/payments/:id/receipt', (req, res) => {
     const pay = db.prepare('SELECT receipt_file FROM payments WHERE id = ?').get(Number(req.params.id));
     if (!pay || !pay.receipt_file) return res.status(404).json({ error: 'Sin comprobante' });

@@ -1,6 +1,6 @@
 'use strict';
 
-const { CATEGORY_IDS, getCategory } = require('./categories');
+const { CATEGORY_IDS, getCategory, UY_BOUNDS, MAX_IMAGES } = require('./categories');
 
 const SORTS = {
   relevance: 'l.featured DESC, COALESCE(l.published_at, l.created_at) DESC',
@@ -21,8 +21,10 @@ const PUBLIC_WHERE = `l.status = 'approved'
 
 const FIELDS = [
   'category', 'title', 'description', 'subtype', 'location', 'price', 'currency', 'event_date',
-  'company', 'contact_name', 'contact_phone', 'contact_email', 'website', 'image', 'expires_at',
+  'company', 'contact_name', 'contact_phone', 'contact_email', 'website', 'image', 'images', 'lat', 'lng', 'expires_at',
 ];
+
+const IMAGE_RE = /^(https?:\/\/|\/uploads\/)[^\s"'<>]+$/i;
 
 function clampInt(v, def, min, max) {
   const n = Number.parseInt(v, 10);
@@ -55,6 +57,13 @@ function searchListings(db, params, { admin = false, ownerId = null, defaultPage
   if (params.category && CATEGORY_IDS.includes(params.category)) {
     where.push('l.category = ?');
     args.push(params.category);
+  }
+  if (params.categories) {
+    const list = String(params.categories).split(',').filter((c) => CATEGORY_IDS.includes(c));
+    if (list.length) {
+      where.push(`l.category IN (${list.map(() => '?').join(',')})`);
+      args.push(...list);
+    }
   }
   if (privileged) {
     if (params.status && ['pending', 'approved', 'rejected'].includes(params.status)) {
@@ -169,7 +178,38 @@ function validateListing(input, { partial = false } = {}) {
     errors.contact_email = 'Email no válido.';
   }
   if (data.website && !/^https?:\/\//i.test(data.website)) data.website = `https://${data.website}`;
-  if (data.image && !/^(https?:\/\/|\/uploads\/)/i.test(data.image)) errors.image = 'La imagen debe ser una URL http(s).';
+  if (data.image && !IMAGE_RE.test(data.image)) errors.image = 'La imagen debe ser una URL http(s).';
+  if (input.images !== undefined) {
+    let list = input.images;
+    if (typeof list === 'string') {
+      try {
+        list = JSON.parse(list || '[]');
+      } catch {
+        list = null;
+      }
+    }
+    if (!Array.isArray(list) || !list.every((u) => typeof u === 'string' && IMAGE_RE.test(u) && u.length <= 400)) {
+      errors.image = 'Las fotos no son válidas.';
+    } else if (list.length > MAX_IMAGES) {
+      errors.image = `Podés subir hasta ${MAX_IMAGES} fotos.`;
+    } else {
+      data.images = JSON.stringify(list);
+      data.image = list[0] || '';
+    }
+  }
+  if (input.lat !== undefined || input.lng !== undefined) {
+    const lat = num(input.lat);
+    const lng = num(input.lng);
+    if (lat === null && lng === null) {
+      data.lat = null;
+      data.lng = null;
+    } else if (lat === null || lng === null || lat < UY_BOUNDS.minLat || lat > UY_BOUNDS.maxLat || lng < UY_BOUNDS.minLng || lng > UY_BOUNDS.maxLng) {
+      errors.map = 'La ubicación del mapa tiene que estar dentro de Uruguay.';
+    } else {
+      data.lat = Math.round(lat * 1e5) / 1e5;
+      data.lng = Math.round(lng * 1e5) / 1e5;
+    }
+  }
 
   if (input.price !== undefined) {
     const p = num(input.price);

@@ -239,10 +239,9 @@
           <div class="field"><label>Fecha del evento</label><input type="date" name="event_date" value="${esc((l.event_date || '').slice(0, 10))}"></div>
           <div class="field"><label>Vence el <small>(se oculta después de esta fecha)</small></label><input type="date" name="expires_at" value="${esc((l.expires_at || '').slice(0, 10))}"></div>
         </div>
-        <div class="field"><label>Imagen</label>
-          ${l.image ? `<img src="${esc(l.image)}" class="img-preview" alt="">` : ''}
-          <input name="image" placeholder="URL de la imagen (https://…)" value="${esc(l.image || '')}">
-          <input type="file" name="imageFile" accept="image/*"><small>Si subís un archivo, reemplaza la URL.</small></div>
+        <div class="field"><label>Fotos</label><div id="a-photos"></div></div>
+        <div class="field" id="map-field" hidden><label>Ubicación en el mapa</label><div id="a-map"></div>
+          <input type="hidden" name="lat"><input type="hidden" name="lng"></div>
         <fieldset><legend>Contacto</legend>
           <div class="field"><label>Nombre</label><input name="contact_name" value="${esc(l.contact_name || '')}"></div>
           <div class="row-2">
@@ -276,7 +275,14 @@
       };
       keep(st, c.subtypes || []);
       keep(lo, c.locations || []);
+      $('#map-field').hidden = !c.hasMap;
+      if (c.hasMap && !mapReady) {
+        mapReady = true;
+        MO.mapPicker($('#a-map'), { lat: l.lat ?? null, lng: l.lng ?? null, bounds: META.uyBounds, latInput: form.elements.lat, lngInput: form.elements.lng });
+      }
     };
+    let mapReady = false;
+    const photos = MO.photoManager($('#a-photos'), { initial: MO.parseImages(l), max: META.maxImages, onMessage: toast });
     form.category.addEventListener('change', sync);
     sync();
 
@@ -285,7 +291,11 @@
       const fd = new FormData(form);
       if (!form.featured.checked) fd.set('featured', '0');
       if (!form.paused.checked) fd.set('paused', '0');
-      if (!form.imageFile.files.length) fd.delete('imageFile');
+      photos.apply(fd);
+      if ($('#map-field').hidden) {
+        fd.delete('lat');
+        fd.delete('lng');
+      }
       try {
         const saved = await api(isNew ? '/api/admin/listings' : `/api/admin/listings/${l.id}`, { method: isNew ? 'POST' : 'PUT', body: fd });
         toast('Guardado');
@@ -425,6 +435,19 @@
           <label class="check" style="margin-bottom:12px"><input type="checkbox" name="moderation_accounts" value="1" ${s.moderation_accounts === '1' ? 'checked' : ''}> Revisar también los avisos pagos antes de publicarlos</label>
           <label class="check"><input type="checkbox" name="public_free_posting" value="1" ${s.public_free_posting === '1' ? 'checked' : ''}> Permitir además publicar gratis sin cuenta (formulario anónimo)</label>
         </fieldset>
+        <fieldset><legend>🧾 Facturación y comprobantes</legend>
+          <p class="muted" style="margin-top:0">Estos datos aparecen en el comprobante de pago que descarga cada anunciante. La factura electrónica (CFE) se emite con tu proveedor habilitado por DGI; después cargás su número en <a href="#/pagos">Pagos</a> y exportás el CSV para tu contador.</p>
+          <div class="field"><label>Razón social</label><input name="billing_name" value="${esc(s.billing_name)}"></div>
+          <div class="row-2">
+            <div class="field"><label>RUT</label><input name="billing_rut" inputmode="numeric" value="${esc(s.billing_rut)}"></div>
+            <div class="field"><label>Dirección</label><input name="billing_address" value="${esc(s.billing_address)}"></div>
+          </div>
+        </fieldset>
+        <fieldset><legend>📬 Cuentas y avisos por email</legend>
+          <label class="check" style="margin-bottom:12px"><input type="checkbox" name="require_email_verification" value="1" ${s.require_email_verification === '1' ? 'checked' : ''}> Pedir que los anunciantes confirmen su email antes de publicar${ME.smtp ? '' : ' <small class="muted">(se aplica cuando configures el servidor de correo)</small>'}</label>
+          <div class="field"><label>Avisar por email antes del vencimiento (días)</label><input name="expiry_reminder_days" type="number" min="0" max="30" value="${esc(s.expiry_reminder_days)}"><small>0 = no avisar.</small></div>
+          <label class="check"><input type="checkbox" name="cookie_banner" value="1" ${s.cookie_banner === '1' ? 'checked' : ''}> Mostrar el aviso de cookies a los visitantes</label>
+        </fieldset>
         <fieldset><legend>💰 Google AdSense</legend>
           <p class="muted" style="margin-top:0">1) Creá tu cuenta en <a href="https://adsense.google.com" target="_blank" rel="noopener">adsense.google.com</a> y agregá tu dominio. 2) Pegá acá tu ID de editor. 3) Cuando Google apruebe el sitio, creá bloques de anuncios "Display" y pegá sus IDs de bloque (data-ad-slot). El archivo <a href="/ads.txt" target="_blank">/ads.txt</a> se genera solo.</p>
           <label class="check" style="margin-bottom:12px"><input type="checkbox" name="adsense_enabled" value="1" ${s.adsense_enabled === '1' ? 'checked' : ''}> Activar anuncios de AdSense</label>
@@ -447,7 +470,7 @@
       const body = Object.fromEntries(new FormData(f));
       body.moderation = f.moderation.checked ? '1' : '0';
       body.adsense_enabled = f.adsense_enabled.checked ? '1' : '0';
-      for (const k of ['payments_transfer_enabled', 'moderation_accounts', 'public_free_posting']) body[k] = f[k].checked ? '1' : '0';
+      for (const k of ['payments_transfer_enabled', 'moderation_accounts', 'public_free_posting', 'require_email_verification', 'cookie_banner']) body[k] = f[k].checked ? '1' : '0';
       try {
         await api('/api/admin/settings', { method: 'PUT', json: body });
         toast('Ajustes guardados');
@@ -470,7 +493,7 @@
         <button class="btn btn-primary">Buscar</button>
       </form>
       <div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>Anunciante</th><th>Tipo</th><th>Avisos</th><th>Pagado</th><th>Alta</th><th>Verificado</th><th>Activo</th><th></th></tr></thead>
+        <thead><tr><th>#</th><th>Anunciante</th><th>Tipo</th><th>Avisos</th><th>Pagado</th><th>Alta</th><th>Email confirmado</th><th>Verificado</th><th>Activo</th><th></th></tr></thead>
         <tbody>${
           rows.length
             ? rows
@@ -482,12 +505,13 @@
           <td><a href="#/avisos?user=${u.id}">${u.listings}</a></td>
           <td style="white-space:nowrap">${money(u.paid, 'UYU')}</td>
           <td style="white-space:nowrap">${fmtDate(u.created_at)}</td>
+          <td><input type="checkbox" data-email-ok="${u.id}" ${u.email_verified ? 'checked' : ''} aria-label="Email confirmado"></td>
           <td><input type="checkbox" data-verified="${u.id}" ${u.verified ? 'checked' : ''} aria-label="Verificado"></td>
           <td><input type="checkbox" data-active="${u.id}" ${u.active ? 'checked' : ''} aria-label="Activo"></td>
           <td class="actions"><a class="btn btn-sm" href="/#/anunciante/${u.id}" target="_blank" title="Página pública">↗</a> <button class="btn btn-sm btn-danger" data-del-user="${u.id}" title="Eliminar">🗑</button></td></tr>`,
                 )
                 .join('')
-            : '<tr><td colspan="9" class="muted" style="text-align:center;padding:30px">No hay anunciantes.</td></tr>'
+            : '<tr><td colspan="10" class="muted" style="text-align:center;padding:30px">No hay anunciantes.</td></tr>'
         }</tbody></table></div>
       <p class="muted" style="font-size:.88rem">Desactivar una cuenta oculta todos sus avisos del sitio y le impide ingresar. "Verificado" muestra un ✔️ junto a su nombre.</p>`;
     $('#uf').addEventListener('submit', (e) => {
@@ -497,6 +521,10 @@
     $$('[data-verified]').forEach((c) => c.addEventListener('change', async () => {
       await api(`/api/admin/users/${c.dataset.verified}`, { method: 'PUT', json: { verified: c.checked } });
       toast(c.checked ? 'Marcado como verificado' : 'Verificación quitada');
+    }));
+    $$('[data-email-ok]').forEach((c) => c.addEventListener('change', async () => {
+      await api(`/api/admin/users/${c.dataset.emailOk}`, { method: 'PUT', json: { email_verified: c.checked } });
+      toast(c.checked ? 'Email marcado como confirmado' : 'Email marcado como no confirmado');
     }));
     $$('[data-active]').forEach((c) => c.addEventListener('change', async () => {
       await api(`/api/admin/users/${c.dataset.active}`, { method: 'PUT', json: { active: c.checked } });
@@ -522,6 +550,11 @@
         <select name="method">${opt('', 'Todos los medios')}${Object.entries(METHOD).map(([k, v]) => opt(k, v, params.method)).join('')}</select>
         <button class="btn btn-primary">Filtrar</button>
       </form>
+      <div class="panel" style="margin:12px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:end">
+        <div class="field" style="margin:0"><label for="csv-month">Exportar pagos aprobados para el contador</label><input id="csv-month" type="month" value="${new Date().toISOString().slice(0, 7)}"></div>
+        <a class="btn" id="csv-link" href="/api/admin/payments.csv?month=${new Date().toISOString().slice(0, 7)}">⬇️ Descargar CSV (Excel)</a>
+        <a class="btn btn-ghost btn-sm" href="/api/admin/payments.csv">Todos los meses</a>
+      </div>
       <p class="muted">${rows.length} pago(s) · Aprobados en esta lista: <strong>${Object.entries(totals).map(([c, t]) => money(t, c)).join(' + ') || '$ 0'}</strong></p>
       <div class="table-wrap"><table>
         <thead><tr><th>#</th><th>Anunciante</th><th>Detalle</th><th>Monto</th><th>Medio</th><th>Estado</th><th>Fecha</th><th></th></tr></thead>
@@ -538,7 +571,10 @@
           <td><span class="badge ${PAYB[p.status]}">${PAY[p.status]}</span></td>
           <td style="white-space:nowrap">${fmtDate(p.created_at)}${p.paid_at ? `<div class="muted" style="font-size:.8rem">Pagado ${fmtDate(p.paid_at)}</div>` : ''}</td>
           <td class="actions">${
-            p.status === 'pending'
+            p.status === 'approved' && p.method !== 'demo' && Number(p.amount) > 0
+              ? `<a class="btn btn-sm" href="/api/admin/payments/${p.id}/recibo" target="_blank" title="Comprobante de pago">🧾</a>
+                 <form class="inv-form" data-inv="${p.id}" style="display:inline-flex;gap:4px;margin-top:4px"><input name="invoice_number" placeholder="N.º e-factura" value="${esc(p.invoice_number || '')}" style="min-height:34px;padding:4px 8px;width:130px" aria-label="Número de e-factura"><button class="btn btn-sm" title="Guardar n.º de e-factura">💾</button></form>`
+              : p.status === 'pending'
               ? `<button class="btn btn-sm" data-approve="${p.id}" title="Confirmar pago">✅ Confirmar</button> <button class="btn btn-sm" data-reject="${p.id}" title="Rechazar">🚫</button>${p.method === 'mercadopago' ? ` <button class="btn btn-sm" data-sync="${p.id}" title="Consultar a Mercado Pago">🔄</button>` : ''}`
               : ''
           }</td></tr>`,
@@ -550,6 +586,12 @@
       e.preventDefault();
       location.hash = hashFor('/pagos', Object.fromEntries(new FormData(e.target)));
     });
+    $('#csv-month').addEventListener('change', (e) => ($('#csv-link').href = `/api/admin/payments.csv?month=${e.target.value}`));
+    $$('[data-inv]').forEach((f) => f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await api(`/api/admin/payments/${f.dataset.inv}/invoice`, { method: 'PUT', json: { invoice_number: f.invoice_number.value } });
+      toast('N.º de e-factura guardado: el anunciante lo ve en su comprobante');
+    }));
     $$('[data-approve]').forEach((b) => b.addEventListener('click', async () => {
       if (!confirm('¿Confirmás que recibiste este pago? El aviso se publicará.')) return;
       await api(`/api/admin/payments/${b.dataset.approve}/approve`, { method: 'POST', json: {} });

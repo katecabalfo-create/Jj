@@ -9,15 +9,23 @@ const multer = require('multer');
 const { ACCOUNT_TYPE_IDS, getAccountType, getCategory } = require('./categories');
 const { getSettings } = require('./db');
 const { searchListings, validateListing, insertListing, updateListing } = require('./listings');
-const { enqueueEmail } = require('./notify');
+const { enqueueEmail, smtpConfigured } = require('./notify');
 const payments = require('./payments');
 const auth = require('./auth');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function publicUser(u) {
+// La confirmación del email solo se exige si está activada y hay servidor de correo para enviarla.
+function verificationRequired(db) {
+  return getSettings(db).require_email_verification === '1' && smtpConfigured();
+}
+
+function publicUser(u, db) {
   const t = getAccountType(u.type);
   return {
+    email_verified: Boolean(u.email_verified),
+    needs_verification: !u.email_verified && Boolean(db) && verificationRequired(db),
+    billing_address: u.billing_address,
     id: u.id,
     type: u.type,
     typeLabel: t.label,
@@ -56,12 +64,13 @@ function validateProfile(body, { partial = false } = {}) {
   str('website', 300);
   str('location', 80);
   str('about', 2000);
+  str('billing_address', 200);
   if ((!partial || body.name !== undefined) && (!data.name || data.name.length < 2)) errors.name = 'Indicá tu nombre.';
   if (data.website && !/^https?:\/\//i.test(data.website)) data.website = `https://${data.website}`;
   return { data, errors };
 }
 
-function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDir }) {
+function createAccountRouter(db, { handleUpload, prepareImages, discardUploads, baseUrl, rateLimiter, receiptDir }) {
   const r = express.Router();
   fs.mkdirSync(receiptDir, { recursive: true });
   // Los comprobantes contienen datos bancarios: se guardan fuera de la carpeta pública.
@@ -74,6 +83,17 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDi
     fileFilter: (req, file, cb) => (RECEIPT_TYPES[file.mimetype] ? cb(null, true) : cb(new Error('El comprobante debe ser una imagen (JPG, PNG, WEBP) o un PDF.'))),
   });
   const needUser = auth.requireUser(db);
+
+  function sendVerification(user, req) {
+    const token = crypto.randomBytes(24).toString('base64url');
+    db.prepare('UPDATE users SET verify_token_hash = ? WHERE id = ?').run(crypto.createHash('sha256').update(token).digest('hex'), user.id);
+    enqueueEmail(
+      db,
+      user.email,
+      'Confirmá tu email en Maldonado Oportunidades',
+      `Hola ${user.name}, para empezar a publicar confirmá tu email entrando a este enlace:\n${baseUrl(req)}/api/account/verify?token=${token}\n\nSi no creaste esta cuenta, ignorá este correo.`,
+    );
+  }
 
   // ---------- Registro y sesión ----------
   r.post('/register', rateLimiter(10, 60 * 60 * 1000), (req, res) => {
@@ -96,13 +116,18 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDi
         .prepare(`INSERT INTO users (type, email, password_hash, ${keys.join(', ')}) VALUES (?, ?, ?, ${keys.map(() => '?').join(', ')})`)
         .run(body.type, email, auth.hashPassword(body.password), ...keys.map((k) => data[k])).lastInsertRowid,
     );
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+    let user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
     auth.issueUserSession(res, user, req.secure);
     const t = getAccountType(user.type);
-    enqueueEmail(db, email, `Bienvenido/a al ${t.panel} de Maldonado Oportunidades`, `Hola ${user.name}, tu cuenta está lista.\nIngresá a tu panel: ${baseUrl(req)}/cuenta/`);
+    if (verificationRequired(db)) sendVerification(user, req);
+    else {
+      db.prepare('UPDATE users SET email_verified = 1 WHERE id = ?').run(user.id);
+      enqueueEmail(db, email, `Bienvenido/a al ${t.panel} de Maldonado Oportunidades`, `Hola ${user.name}, tu cuenta está lista.\nIngresá a tu panel: ${baseUrl(req)}/cuenta/`);
+    }
     const s = getSettings(db);
     if (s.contact_email) enqueueEmail(db, s.contact_email, `Nueva cuenta (${t.label}): ${user.business_name || user.name}`, `${email}\n${baseUrl(req)}/admin/#/usuarios`);
-    res.status(201).json({ user: publicUser(user) });
+    user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+    res.status(201).json({ user: publicUser(user, db) });
   });
 
   r.post('/login', rateLimiter(15, 15 * 60 * 1000), (req, res) => {
@@ -114,7 +139,21 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDi
     if (!user.active) return res.status(403).json({ error: 'Tu cuenta está suspendida. Contactanos para más información.' });
     db.prepare("UPDATE users SET last_login_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(user.id);
     auth.issueUserSession(res, user, req.secure);
-    res.json({ user: publicUser(user) });
+    res.json({ user: publicUser(user, db) });
+  });
+
+  // Enlace del email de confirmación.
+  r.get('/verify', (req, res) => {
+    const hash = crypto.createHash('sha256').update(String(req.query.token || '')).digest('hex');
+    const user = String(req.query.token || '') && db.prepare("SELECT id FROM users WHERE verify_token_hash = ? AND verify_token_hash <> ''").get(hash);
+    if (user) db.prepare("UPDATE users SET email_verified = 1, verify_token_hash = '' WHERE id = ?").run(user.id);
+    res.redirect(`/cuenta/#/${user ? '?email=confirmado' : '?email=invalido'}`);
+  });
+
+  r.post('/resend-verification', needUser, rateLimiter(5, 60 * 60 * 1000), (req, res) => {
+    if (req.user.email_verified) return res.json({ ok: true, already: true });
+    sendVerification(req.user, req);
+    res.json({ ok: true });
   });
 
   r.post('/logout', (req, res) => {
@@ -144,12 +183,12 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDi
     db.prepare('DELETE FROM password_resets WHERE user_id = ?').run(row.user_id);
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(row.user_id);
     auth.issueUserSession(res, user, req.secure);
-    res.json({ user: publicUser(user) });
+    res.json({ user: publicUser(user, db) });
   });
 
   r.get('/me', (req, res) => {
     const user = auth.currentUser(req, db);
-    res.json({ user: user ? publicUser(user) : null, paymentMethods: payments.availableMethods(db) });
+    res.json({ user: user ? publicUser(user, db) : null, paymentMethods: payments.availableMethods(db) });
   });
 
   r.put('/me', needUser, (req, res) => {
@@ -157,7 +196,7 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDi
     if (Object.keys(errors).length) return res.status(400).json({ error: 'Revisá los campos marcados.', fields: errors });
     const keys = Object.keys(data);
     if (keys.length) db.prepare(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => data[k]), req.user.id);
-    res.json({ user: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)) });
+    res.json({ user: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id), db) });
   });
 
   r.put('/password', needUser, (req, res) => {
@@ -182,10 +221,17 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDi
       expired: q("SELECT COUNT(*) n FROM listings WHERE user_id = ? AND expires_at IS NOT NULL AND expires_at <> '' AND expires_at < ?", today).n,
       views: q('SELECT COALESCE(SUM(views),0) n FROM listings WHERE user_id = ?').n,
       spent: db.prepare("SELECT currency, SUM(amount) total FROM payments WHERE user_id = ? AND status = 'approved' GROUP BY currency").all(uid),
+      daily: dailyViews(db, 'l.user_id = ?', uid),
       expiringSoon: db
         .prepare("SELECT id, title, expires_at FROM listings WHERE user_id = ? AND status = 'approved' AND expires_at BETWEEN ? AND date(?, '+5 days') ORDER BY expires_at")
         .all(uid, today, today),
     });
+  });
+
+  r.get('/listings/:id/stats', needUser, (req, res) => {
+    const l = ownListing(req, res);
+    if (!l) return;
+    res.json({ id: l.id, title: l.title, views: l.views, daily: dailyViews(db, 'l.id = ?', l.id) });
   });
 
   // ---------- Mis avisos ----------
@@ -210,12 +256,12 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDi
 
   r.post('/listings', needUser, handleUpload, (req, res) => {
     const input = { ...req.body };
-    if (req.file) input.image = `/uploads/${req.file.filename}`;
     delete input.expires_at;
+    prepareImages(req, input);
     const { data, errors } = validateListing(input);
     if (data.category && !checkCategory(req.user, data.category)) errors.category = 'Tu tipo de cuenta no puede publicar en esa sección.';
     if (Object.keys(errors).length) {
-      if (req.file) fs.rm(req.file.path, () => {});
+      discardUploads(req);
       return res.status(400).json({ error: 'Revisá los campos marcados.', fields: errors });
     }
     if (!data.company && req.user.business_name) data.company = req.user.business_name;
@@ -227,11 +273,14 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDi
     const l = ownListing(req, res);
     if (!l) return;
     const input = { ...req.body };
-    if (req.file) input.image = `/uploads/${req.file.filename}`;
     delete input.expires_at;
+    prepareImages(req, input, l);
     const { data, errors } = validateListing(input, { partial: true });
     if (data.category && !checkCategory(req.user, data.category)) errors.category = 'Tu tipo de cuenta no puede publicar en esa sección.';
-    if (Object.keys(errors).length) return res.status(400).json({ error: 'Revisá los campos marcados.', fields: errors });
+    if (Object.keys(errors).length) {
+      discardUploads(req);
+      return res.status(400).json({ error: 'Revisá los campos marcados.', fields: errors });
+    }
     // Un aviso rechazado vuelve a revisión al editarlo.
     if (l.status === 'rejected') data.status = 'pending';
     updateListing(db, l.id, data);
@@ -267,6 +316,9 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDi
       const l = ownListing(req, res);
       if (!l) return;
       if (l.status === 'rejected') return res.status(400).json({ error: 'El aviso fue rechazado. Editalo para que lo revisemos antes de pagar.' });
+      if (!req.user.email_verified && verificationRequired(db)) {
+        return res.status(403).json({ error: 'Confirmá tu email para publicar. Te enviamos un enlace a tu correo.', code: 'email_not_verified' });
+      }
       const plan = db.prepare('SELECT * FROM plans WHERE id = ? AND account_type = ? AND active = 1').get(Number(req.body?.plan_id), req.user.type);
       if (!plan) return res.status(400).json({ error: 'Elegí un plan válido.' });
       const pay = await payments.createCheckout(db, { user: req.user, listing: l, plan, method: req.body?.method, baseUrl: baseUrl(req) });
@@ -322,6 +374,13 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDi
     res.sendFile(path.join(receiptDir, pay.receipt_file), { headers: { 'Cache-Control': 'private, no-store' } });
   });
 
+  // Comprobante de pago imprimible (no reemplaza a la e-factura, que se emite con un proveedor habilitado por DGI).
+  r.get('/payments/:id/recibo', needUser, (req, res) => {
+    const pay = db.prepare("SELECT * FROM payments WHERE id = ? AND user_id = ? AND status = 'approved'").get(Number(req.params.id), req.user.id);
+    if (!pay) return res.status(404).type('text').send('Comprobante no disponible');
+    res.type('html').send(renderReceipt(db, pay));
+  });
+
   r.post('/payments/:id/cancel', needUser, (req, res) => {
     const r2 = db.prepare("UPDATE payments SET status = 'cancelled' WHERE id = ? AND user_id = ? AND status = 'pending'").run(Number(req.params.id), req.user.id);
     res.json({ ok: r2.changes > 0 });
@@ -330,9 +389,67 @@ function createAccountRouter(db, { handleUpload, baseUrl, rateLimiter, receiptDi
   return r;
 }
 
+/** Visitas por día de los últimos `days` días (incluye los días sin visitas). */
+function dailyViews(db, where, arg, days = 30) {
+  const rows = db
+    .prepare(
+      `SELECT v.day, SUM(v.views) n FROM listing_views_daily v JOIN listings l ON l.id = v.listing_id
+       WHERE ${where} AND v.day >= date('now', ?) GROUP BY v.day`,
+    )
+    .all(arg, `-${days - 1} days`);
+  const map = Object.fromEntries(rows.map((r) => [r.day, r.n]));
+  const out = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    out.push({ day: d, views: map[d] || 0 });
+  }
+  return out;
+}
+
+function escapeHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+const METHOD_NAMES = { mercadopago: 'Mercado Pago', transfer: 'Transferencia bancaria', free: 'Sin cargo', demo: 'Prueba' };
+
+function renderReceipt(db, pay) {
+  const s = getSettings(db);
+  const money = `${pay.currency === 'USD' ? 'US$' : '$'} ${Number(pay.amount).toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const e = escapeHtml;
+  const row = (k, v) => (v ? `<tr><th>${e(k)}</th><td>${e(v)}</td></tr>` : '');
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Comprobante de pago N.º ${pay.id}</title>
+<style>
+  body{font-family:system-ui,sans-serif;color:#10252d;max-width:640px;margin:32px auto;padding:0 16px;line-height:1.5}
+  h1{font-size:1.4rem;margin:0}.muted{color:#5b6b75}table{width:100%;border-collapse:collapse;margin:16px 0}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid #dbe3e8;vertical-align:top}th{width:40%;color:#5b6b75;font-weight:600}
+  .total{font-size:1.5rem;font-weight:800}.box{border:1px solid #dbe3e8;border-radius:12px;padding:18px}
+  .note{font-size:.85rem;color:#5b6b75}button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #0b6e8a;background:#0b6e8a;color:#fff;cursor:pointer}
+  @media print{button{display:none}body{margin:0}}
+</style></head><body>
+<div class="box">
+  <p class="muted" style="margin:0">${e(s.billing_name || s.site_name)}${s.billing_rut ? ` · RUT ${e(s.billing_rut)}` : ''}${s.billing_address ? ` · ${e(s.billing_address)}` : ''}</p>
+  <h1>Comprobante de pago N.º ${pay.id}</h1>
+  <table>
+    ${row('Fecha de pago', new Date(pay.paid_at || pay.created_at).toLocaleString('es-UY'))}
+    ${row('Cliente', pay.invoice_name)}
+    ${row('RUT', pay.invoice_rut)}
+    ${row('Dirección', pay.invoice_address)}
+    ${row('Concepto', pay.description)}
+    ${row('Medio de pago', METHOD_NAMES[pay.method] || pay.method)}
+    ${row('Referencia', pay.provider_payment_id ? `Mercado Pago ${pay.provider_payment_id}` : '')}
+    ${row('E-factura', pay.invoice_number)}
+    <tr><th>Total</th><td class="total">${e(money)}</td></tr>
+  </table>
+  <p class="note">${pay.invoice_number ? `Este pago está documentado en la e-factura ${e(pay.invoice_number)}.` : 'Este comprobante acredita el pago. La factura electrónica (CFE), si corresponde, se envía por separado.'}</p>
+</div>
+<p><button type="button" onclick="window.print()">Imprimir o guardar como PDF</button></p>
+</body></html>`;
+}
+
 function publicAdvertiser(u) {
   const t = getAccountType(u.type);
   return { id: u.id, type: u.type, typeLabel: t ? t.label : u.type, name: u.business_name || u.name, verified: Boolean(u.verified) };
 }
 
-module.exports = { createAccountRouter, publicUser, publicAdvertiser, getCategory };
+module.exports = { createAccountRouter, publicUser, publicAdvertiser, getCategory, dailyViews, renderReceipt };

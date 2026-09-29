@@ -31,6 +31,13 @@ const DEFAULT_SETTINGS = {
   transfer_account_usd: '',
   transfer_branch: '',
   bank_transfer_info: 'Indicá el número de pago en el concepto de la transferencia y subí el comprobante desde tu panel.',
+  require_email_verification: '1', // se exige solo si hay servidor de correo (SMTP) configurado
+  expiry_reminder_days: '3', // días antes del vencimiento en que se avisa al anunciante
+  cookie_banner: '1',
+  // Datos del emisor para los comprobantes de pago
+  billing_name: '',
+  billing_rut: '',
+  billing_address: '',
 };
 
 // Planes iniciales (se editan desde el panel de administración).
@@ -187,6 +194,28 @@ function migrate(db) {
   addColumn(db, 'payments', 'receipt_file', "TEXT NOT NULL DEFAULT ''");
   addColumn(db, 'payments', 'receipt_at', 'TEXT');
   addColumn(db, 'payments', 'payer_note', "TEXT NOT NULL DEFAULT ''");
+  // Varias fotos por aviso (JSON con hasta 8 rutas; la primera también queda en "image")
+  addColumn(db, 'listings', 'images', "TEXT NOT NULL DEFAULT '[]'");
+  addColumn(db, 'listings', 'lat', 'REAL');
+  addColumn(db, 'listings', 'lng', 'REAL');
+  addColumn(db, 'listings', 'expiry_notice_for', "TEXT NOT NULL DEFAULT ''");
+  // Las cuentas que ya existían quedan con el email confirmado.
+  if (addColumn(db, 'users', 'email_verified', 'INTEGER NOT NULL DEFAULT 0')) db.exec('UPDATE users SET email_verified = 1');
+  addColumn(db, 'users', 'verify_token_hash', "TEXT NOT NULL DEFAULT ''");
+  addColumn(db, 'users', 'billing_address', "TEXT NOT NULL DEFAULT ''");
+  // Facturación: datos del cliente al momento del pago y n.º de e-factura cargado por el administrador
+  addColumn(db, 'payments', 'invoice_name', "TEXT NOT NULL DEFAULT ''");
+  addColumn(db, 'payments', 'invoice_rut', "TEXT NOT NULL DEFAULT ''");
+  addColumn(db, 'payments', 'invoice_address', "TEXT NOT NULL DEFAULT ''");
+  addColumn(db, 'payments', 'invoice_number', "TEXT NOT NULL DEFAULT ''");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS listing_views_daily (
+      listing_id INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+      day TEXT NOT NULL,
+      views INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (listing_id, day)
+    );
+  `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_listings_user ON listings(user_id)');
 
   if (db.prepare('SELECT COUNT(*) n FROM plans').get().n === 0) {
@@ -200,7 +229,9 @@ function migrate(db) {
 
 function addColumn(db, table, column, def) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
-  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+  if (cols.some((c) => c.name === column)) return false;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+  return true;
 }
 
 function getSettings(db) {

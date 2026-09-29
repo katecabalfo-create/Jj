@@ -131,4 +131,33 @@ async function flushOutbox(db) {
   return { sent, pending: 0 };
 }
 
-module.exports = { notifyNewListing, buildDigests, flushOutbox, smtpConfigured, matches, enqueueEmail };
+/**
+ * Avisa por email a los anunciantes cuyos avisos vencen en los próximos días.
+ * Se envía una vez por cada fecha de vencimiento (si renuevan, se vuelve a avisar antes del nuevo vencimiento).
+ */
+function sendExpiryReminders(db, baseUrl) {
+  const s = db.prepare("SELECT value FROM settings WHERE key = 'expiry_reminder_days'").get();
+  const days = Math.max(0, Number.parseInt(s ? s.value : '3', 10) || 0);
+  if (!days) return 0;
+  const rows = db
+    .prepare(
+      `SELECT l.id, l.title, l.expires_at, u.email, u.name FROM listings l JOIN users u ON u.id = l.user_id
+       WHERE l.status = 'approved' AND l.payment_status = 'paid' AND u.active = 1
+         AND l.expires_at >= date('now') AND l.expires_at <= date('now', ?)
+         AND l.expiry_notice_for <> l.expires_at`,
+    )
+    .all(`+${days} days`);
+  for (const r of rows) {
+    const [y, m, d] = r.expires_at.slice(0, 10).split('-');
+    enqueueEmail(
+      db,
+      r.email,
+      `Tu aviso vence el ${d}/${m}/${y}: ${r.title}`,
+      `Hola ${r.name}, tu aviso "${r.title}" deja de mostrarse el ${d}/${m}/${y}.\nRenovalo para que siga visible (los días se suman al vencimiento actual):\n${baseUrl}/cuenta/#/avisos/${r.id}/pagar`,
+    );
+    db.prepare('UPDATE listings SET expiry_notice_for = expires_at WHERE id = ?').run(r.id);
+  }
+  return rows.length;
+}
+
+module.exports = { sendExpiryReminders, notifyNewListing, buildDigests, flushOutbox, smtpConfigured, matches, enqueueEmail };

@@ -240,13 +240,121 @@
     });
   }
 
+  // ---------- Gráfico de visitas por día (una serie: barras, sin leyenda) ----------
+  // Se dibuja al ancho real del contenedor para que el texto conserve su tamaño en celular y escritorio.
+  function viewsChartHtml(daily, title) {
+    const total = daily.reduce((a, d) => a + d.views, 0);
+    return `<figure class="views-chart" data-daily='${esc(JSON.stringify(daily))}' data-title="${esc(title)}">
+      <figcaption><strong>${esc(title)}</strong><span class="muted">${total} visita${total === 1 ? '' : 's'} en los últimos ${daily.length} días</span></figcaption>
+      <div class="vc-wrap"><div class="vc-svg"></div><div class="vc-tip" hidden></div></div>
+      <details><summary>Ver como tabla</summary>
+        <div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Día</th><th>Visitas</th></tr></thead><tbody>
+        ${daily.slice().reverse().map((d) => `<tr><td>${fmtDate(d.day)}</td><td>${d.views}</td></tr>`).join('')}</tbody></table></div></details>
+    </figure>`;
+  }
+
+  function drawViewsChart(fig) {
+    const daily = JSON.parse(fig.dataset.daily);
+    const total = daily.reduce((a, d) => a + d.views, 0);
+    const max = Math.max(...daily.map((d) => d.views));
+    const step = max <= 4 ? 1 : max <= 10 ? 2 : max <= 50 ? 10 : max <= 100 ? 20 : Math.ceil(max / 5 / 50) * 50;
+    const top = Math.max(step, Math.ceil(max / step) * step);
+    const W = Math.max(260, Math.round(fig.querySelector('.vc-wrap').clientWidth));
+    const H = 180;
+    const L = 30; // espacio para el eje Y
+    const B = 24; // espacio para las fechas
+    const plotW = W - L - 4;
+    const plotH = H - B - 8;
+    const slot = plotW / daily.length;
+    const bw = Math.max(2, slot - 2); // 2px de separación entre barras
+    const y = (v) => 8 + plotH - (v / top) * plotH;
+    const short = (d) => `${Number(d.slice(8, 10))}/${Number(d.slice(5, 7))}`;
+    const ticks = [];
+    for (let v = 0; v <= top; v += step) ticks.push(v);
+    const labelIdx = [0, Math.floor(daily.length / 2), daily.length - 1];
+    const bars = daily
+      .map((d, i) => {
+        const x = L + i * slot + 1;
+        const h = y(0) - y(d.views);
+        const r = Math.min(4, bw / 2, h);
+        // Extremo superior redondeado de 4px y base recta sobre el eje
+        const path = h > 0
+          ? `M${x},${y(0)} V${y(d.views) + r} Q${x},${y(d.views)} ${x + r},${y(d.views)} H${x + bw - r} Q${x + bw},${y(d.views)} ${x + bw},${y(d.views) + r} V${y(0)} Z`
+          : '';
+        return `<g class="vc-col" data-i="${i}"><rect class="vc-hit" x="${L + i * slot}" y="8" width="${slot}" height="${plotH}" fill="transparent"></rect>${path ? `<path class="vc-bar" d="${path}"></path>` : ''}</g>`;
+      })
+      .join('');
+    fig.querySelector('.vc-svg').innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(fig.dataset.title)}: ${total} visitas en ${daily.length} días">
+      ${ticks.map((v) => `<line class="vc-grid" x1="${L}" x2="${W - 4}" y1="${y(v)}" y2="${y(v)}"></line><text class="vc-axis" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('')}
+      ${bars}
+      ${labelIdx.map((i) => `<text class="vc-axis" x="${L + i * slot + slot / 2}" y="${H - 6}" text-anchor="${i === 0 ? 'start' : i === daily.length - 1 ? 'end' : 'middle'}">${short(daily[i].day)}</text>`).join('')}
+    </svg>`;
+    const tip = fig.querySelector('.vc-tip');
+    const show = (g) => {
+      const d = daily[Number(g.dataset.i)];
+      $$('.vc-col', fig).forEach((x) => x.classList.toggle('on', x === g));
+      tip.innerHTML = `<strong>${d.views}</strong> visita${d.views === 1 ? '' : 's'}<br><span>${esc(fmtDate(d.day))}</span>`;
+      tip.hidden = false;
+      const hit = g.querySelector('.vc-hit').getBoundingClientRect();
+      const box = fig.querySelector('.vc-wrap').getBoundingClientRect();
+      tip.style.left = `${Math.min(Math.max(hit.left - box.left + hit.width / 2, 50), box.width - 50)}px`;
+    };
+    $$('.vc-col', fig).forEach((g) => {
+      g.addEventListener('pointerenter', () => show(g));
+      g.addEventListener('click', () => show(g));
+    });
+    fig.querySelector('svg').addEventListener('pointerleave', () => {
+      tip.hidden = true;
+      $$('.vc-col', fig).forEach((x) => x.classList.remove('on'));
+    });
+  }
+
+  function bindViewsChart(root) {
+    $$('.views-chart', root).forEach((fig) => {
+      drawViewsChart(fig);
+      let last = fig.clientWidth;
+      const ro = new ResizeObserver(() => {
+        if (!fig.isConnected) return ro.disconnect();
+        if (Math.abs(fig.clientWidth - last) > 8) {
+          last = fig.clientWidth;
+          drawViewsChart(fig);
+        }
+      });
+      ro.observe(fig);
+    });
+  }
+
+  function verifyNoticeHtml() {
+    if (!USER || !USER.needs_verification) return '';
+    return `<div class="notice warn" id="verify-notice">📧 Confirmá tu email para poder publicar. Te enviamos un enlace a <strong>${esc(USER.email)}</strong>.
+      <button type="button" class="btn btn-sm" id="resend-verify" style="margin-left:6px">Reenviar email</button></div>`;
+  }
+
+  function bindVerifyNotice() {
+    const b = $('#resend-verify');
+    if (!b) return;
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        await api('/api/account/resend-verification', { method: 'POST' });
+        toast('Te enviamos el email de nuevo. Revisá también la carpeta de spam.');
+      } catch (err) {
+        toast(err.message);
+        b.disabled = false;
+      }
+    });
+  }
+
   // ---------- Resumen ----------
-  async function dashboardView() {
+  async function dashboardView(params = {}) {
     const [s, list] = await Promise.all([api('/api/account/stats'), api('/api/account/listings?pageSize=5')]);
     const t = type(USER.type);
+    if (params.email === 'confirmado') toast('¡Listo! Tu email quedó confirmado.');
+    if (params.email === 'invalido') toast('El enlace de confirmación no es válido o ya se usó.');
     view.innerHTML = `
       <div class="section-head"><div><h1>${t.icon} Hola, ${esc(USER.name.split(' ')[0])}</h1><p class="muted">${esc(USER.business_name || t.panel)}${USER.verified ? ' · ✔️ Verificado' : ''}</p></div>
         <a class="btn btn-primary" href="#/avisos/nuevo">＋ Publicar aviso</a></div>
+      ${verifyNoticeHtml()}
       ${s.unpaid ? `<div class="notice warn">Tenés ${s.unpaid} aviso(s) esperando el pago para publicarse. <a href="#/avisos?payment=unpaid">Pagar ahora →</a></div>` : ''}
       ${s.expiringSoon.length ? `<div class="notice warn">⏰ Por vencer: ${s.expiringSoon.map((l) => `<a href="#/avisos/${l.id}/pagar">${esc(l.title)}</a> (${fmtDate(l.expires_at)})`).join(', ')}. Renovalos para que sigan visibles.</div>` : ''}
       <div class="stats">
@@ -256,9 +364,12 @@
         <div class="stat"><b>${s.views}</b><span>Visitas totales</span></div>
         <a class="stat" href="#/pagos"><b>${s.spent.length ? s.spent.map((x) => money(x.total, x.currency)).join(' + ') : '$ 0'}</b><span>Invertido</span></a>
       </div>
+      <div class="panel">${viewsChartHtml(s.daily, 'Visitas por día a todos tus avisos')}</div>
       <div class="section-head"><h2>Últimos avisos</h2><a href="#/avisos">Ver todos →</a></div>
       ${list.items.length ? `<div class="my-list">${list.items.map(itemHtml).join('')}</div>` : `<div class="empty"><div class="big">${t.icon}</div><p>Todavía no publicaste nada.</p><a class="btn btn-primary" href="#/avisos/nuevo">Crear mi primer aviso</a></div>`}`;
     bindItemActions();
+    bindViewsChart(view);
+    bindVerifyNotice();
   }
 
   // ---------- Mis avisos ----------
@@ -276,6 +387,7 @@
       <div class="actions">
         ${canPay ? `<a class="btn btn-sm ${st === 'unpaid' || st === 'expired' ? 'btn-primary' : ''}" href="#/avisos/${l.id}/pagar">${st === 'unpaid' ? '💳 Pagar y publicar' : '🔁 Renovar'}</a>` : ''}
         <a class="btn btn-sm" href="#/avisos/${l.id}">✏️ Editar</a>
+        ${l.views ? `<a class="btn btn-sm" href="#/avisos/${l.id}/estadisticas" title="Visitas por día">📈</a>` : ''}
         ${st === 'approved' || st === 'paused' ? `<button class="btn btn-sm" data-pause="${l.id}" data-paused="${l.paused ? 1 : 0}">${l.paused ? '▶️ Reactivar' : '⏸ Pausar'}</button>` : ''}
         ${st === 'approved' ? `<a class="btn btn-sm" href="/#/aviso/${l.id}" target="_blank">↗ Ver</a>` : ''}
         <button class="btn btn-sm btn-danger" data-del="${l.id}" aria-label="Eliminar">🗑</button>
@@ -364,9 +476,9 @@
             <div class="field"><label for="e-cur">Moneda</label><select id="e-cur" name="currency"><option value="UYU" ${l.currency !== 'USD' ? 'selected' : ''}>Pesos ($)</option><option value="USD" ${l.currency === 'USD' ? 'selected' : ''}>Dólares (US$)</option></select></div>
           </div>
           <div class="field" id="event-field" hidden><label for="e-date">Fecha del evento *</label><input id="e-date" type="date" name="event_date" value="${esc((l.event_date || '').slice(0, 10))}"></div>
-          <div class="field"><label for="e-img">Foto <small>(máx. 5 MB)</small></label>
-            ${l.image ? `<img src="${esc(l.image)}" class="img-preview" id="cur-img" alt="">` : '<img class="img-preview" id="cur-img" alt="" hidden>'}
-            <input id="e-img" type="file" name="imageFile" accept="image/jpeg,image/png,image/webp,image/gif"></div>
+          <div class="field"><label>Fotos</label><div id="e-photos"></div></div>
+          <div class="field" id="map-field" hidden><label>Ubicación en el mapa <small>(opcional)</small></label><div id="e-map"></div>
+            <input type="hidden" name="lat"><input type="hidden" name="lng"></div>
           <h2>Contacto</h2>
           <div class="field"><label for="e-cn">Nombre</label><input id="e-cn" name="contact_name" value="${esc(l.contact_name || '')}"></div>
           <div class="row-2">
@@ -393,29 +505,28 @@
       $('#price-row').hidden = !c.hasPrice;
       $('#price-label').textContent = c.priceLabel || 'Precio';
       $('#event-field').hidden = !c.hasEventDate;
+      $('#map-field').hidden = !c.hasMap;
+      if (c.hasMap && !mapReady) {
+        mapReady = true;
+        MO.mapPicker($('#e-map'), { lat: l.lat ?? null, lng: l.lng ?? null, bounds: META.uyBounds, latInput: form.elements.lat, lngInput: form.elements.lng });
+      }
     };
+    let mapReady = false;
+    const photos = MO.photoManager($('#e-photos'), { initial: MO.parseImages(l), max: META.maxImages, onMessage: toast });
     $$('input[name="category"]', form).forEach((r) => r.addEventListener('change', () => {
       $('#e-sub').value = '';
       $('#e-loc').value = '';
       sync();
     }));
     sync();
-    $('#e-img').addEventListener('change', (e) => {
-      const f = e.target.files[0];
-      if (f && f.size > 5 * 1024 * 1024) {
-        toast('La imagen supera los 5 MB');
-        e.target.value = '';
-        return;
-      }
-      if (f) {
-        $('#cur-img').src = URL.createObjectURL(f);
-        $('#cur-img').hidden = false;
-      }
-    });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
-      if (!form.imageFile.files.length) fd.delete('imageFile');
+      photos.apply(fd);
+      if ($('#map-field').hidden) {
+        fd.delete('lat');
+        fd.delete('lng');
+      }
       const btn = $('button[type="submit"]', form);
       btn.disabled = true;
       try {
@@ -437,6 +548,18 @@
   // ---------- Pago ----------
   async function payView(id) {
     const [l, p] = await Promise.all([api(`/api/account/listings/${id}`), api('/api/account/plans')]);
+    if (USER.needs_verification) {
+      view.innerHTML = `<div class="form-page"><h1>💳 Pagar y publicar</h1>${verifyNoticeHtml()}
+        <p>Cuando confirmes tu email vas a poder elegir el plan y publicar <strong>${esc(l.title)}</strong>. Tu aviso ya quedó guardado.</p>
+        <p><button type="button" class="btn" id="recheck">Ya lo confirmé</button> <a class="btn" href="#/avisos">Mis avisos</a></p></div>`;
+      bindVerifyNotice();
+      $('#recheck').addEventListener('click', async () => {
+        USER = (await api('/api/account/me')).user;
+        if (USER.needs_verification) toast('Todavía no está confirmado. Revisá tu correo.');
+        else payView(id);
+      });
+      return;
+    }
     const [st] = listingState(l);
     if (!p.plans.length) {
       view.innerHTML = '<div class="empty" style="margin:20px 0"><p>No hay planes disponibles en este momento. Contactanos.</p></div>';
@@ -519,7 +642,9 @@
     if (p.status === 'approved') {
       body = `<div class="big">✅</div><h1>¡Pago confirmado!</h1>
         <p>${p.listing ? (p.listing.status === 'approved' ? `Tu aviso está publicado hasta el ${fmtDate((p.listing.expires_at || '').slice(0, 10))}.` : 'Tu aviso quedó en revisión y se publicará en breve.') : ''}</p>
-        <p style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${p.listing && p.listing.status === 'approved' ? `<a class="btn btn-primary" href="/#/aviso/${p.listing.id}" target="_blank">Ver mi aviso</a>` : ''}<a class="btn" href="#/avisos">Mis avisos</a></p>`;
+        ${p.invoice_number ? `<p>E-factura: <strong>${esc(p.invoice_number)}</strong></p>` : ''}
+        <p style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${p.listing && p.listing.status === 'approved' ? `<a class="btn btn-primary" href="/#/aviso/${p.listing.id}" target="_blank">Ver mi aviso</a>` : ''}
+          ${Number(p.amount) > 0 && p.method !== 'demo' ? `<a class="btn" href="/api/account/payments/${p.id}/recibo" target="_blank">🧾 Comprobante</a>` : ''}<a class="btn" href="#/avisos">Mis avisos</a></p>`;
     } else if (p.status === 'pending' && p.method === 'transfer') {
       const t = p.transfer || {};
       const row = (label, value, copy) =>
@@ -603,6 +728,17 @@
     if (p.status === 'pending' && p.method === 'mercadopago' && attempt < 6) setTimeout(() => paymentView(id, attempt + 1), 5000);
   }
 
+  async function listingStatsView(id) {
+    const st = await api(`/api/account/listings/${id}/stats`);
+    view.innerHTML = `<div class="form-page">
+      <p class="breadcrumb"><a href="#/avisos">Mis avisos</a> › Estadísticas</p>
+      <h1>📈 ${esc(st.title)}</h1>
+      <p class="muted">${st.views} visita${st.views === 1 ? '' : 's'} desde que se publicó</p>
+      <div class="panel">${viewsChartHtml(st.daily, 'Visitas por día')}</div>
+      <p><a class="btn" href="#/avisos/${st.id}">✏️ Editar aviso</a> <a class="btn" href="/#/aviso/${st.id}" target="_blank">↗ Ver en el sitio</a></p></div>`;
+    bindViewsChart(view);
+  }
+
   // ---------- Perfil ----------
   function profileView() {
     const t = type(USER.type);
@@ -620,6 +756,7 @@
             <div class="field"><label>Zona</label><select name="location"><option value="">—</option>${allLoc.map((x) => `<option ${x === USER.location ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
           </div>
           <div class="field"><label>Sitio web</label><input name="website" value="${esc(USER.website)}"></div>
+          <div class="field"><label>Dirección de facturación <small>(aparece en tus comprobantes junto al RUT)</small></label><input name="billing_address" value="${esc(USER.billing_address || '')}" maxlength="200"></div>
           <div class="field"><label>Sobre ${USER.type === 'empresa' ? 'la empresa' : 'vos'} <small>(se muestra en tu página pública)</small></label><textarea name="about" rows="4">${esc(USER.about)}</textarea></div>
           <button class="btn btn-primary" style="width:100%">Guardar perfil</button>
         </form>
@@ -675,8 +812,9 @@
         if (a && a !== '') return loginView({ next: location.hash });
         return landingView();
       }
-      if (!a) await dashboardView();
+      if (!a) await dashboardView(params);
       else if (a === 'avisos' && b && c === 'pagar') await payView(b);
+      else if (a === 'avisos' && b && c === 'estadisticas') await listingStatsView(b);
       else if (a === 'avisos' && b) await editView(b);
       else if (a === 'avisos') await listView(params);
       else if (a === 'pagos' && b) await paymentView(b);
