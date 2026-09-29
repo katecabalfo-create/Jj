@@ -79,7 +79,8 @@
   function showLogin() {
     $('#admin-header').hidden = true;
     view.innerHTML = `<form class="panel login" id="login-form">
-      <h1>🔐 Panel de administración</h1>
+      <img class="auth-logo" src="/img/icon.svg" alt="Maldonado Oportunidades" width="56" height="56">
+      <h1>Panel de administración</h1>
       <div class="field"><label for="pw">Contraseña</label><input id="pw" name="password" type="password" autocomplete="current-password" required autofocus></div>
       <button class="btn btn-primary" style="width:100%">Entrar</button>
     </form>`;

@@ -152,6 +152,7 @@
 
   function loginView(params) {
     view.innerHTML = `<form class="panel auth-box" id="login" novalidate>
+      <img class="auth-logo" src="/img/icon.svg" alt="Maldonado Oportunidades" width="56" height="56">
       <h1>Ingresar a mi panel</h1>
       <div class="field"><label for="l-email">Email</label><input id="l-email" name="email" type="email" autocomplete="email" required></div>
       <div class="field"><label for="l-pw">Contraseña</label><input id="l-pw" name="password" type="password" autocomplete="current-password" required></div>
@@ -174,6 +175,7 @@
   function registerView(params) {
     const t = type(params.tipo) || META.accountTypes[0];
     view.innerHTML = `<form class="panel auth-box" id="register" novalidate>
+      <img class="auth-logo" src="/img/icon.svg" alt="Maldonado Oportunidades" width="56" height="56">
       <h1>${t.icon} Cuenta de ${esc(t.label.toLowerCase())}</h1>
       <p class="muted" style="margin-top:0">${esc(t.pitch)}</p>
       <div class="field"><label>Tipo de cuenta</label><select name="type">${META.accountTypes.map((x) => `<option value="${x.id}" ${x.id === t.id ? 'selected' : ''}>${x.icon} ${esc(x.label)}</option>`).join('')}</select></div>

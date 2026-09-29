@@ -171,7 +171,8 @@ function createApp(db, options = {}) {
 <title>${escapeHtml(l.title)} | ${escapeHtml(s.site_name)}</title>
 <meta name="description" content="${desc}">
 <meta property="og:title" content="${escapeHtml(l.title)}"><meta property="og:description" content="${desc}">
-${img ? `<meta property="og:image" content="${escapeHtml(img)}">` : ''}
+<meta property="og:image" content="${escapeHtml(img || `${baseUrl(req)}/img/og-image.png`)}"><meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/img/icon.svg" type="image/svg+xml">
 <meta http-equiv="refresh" content="0; url=/#/aviso/${l.id}"></head>
 <body><h1>${escapeHtml(l.title)}</h1><p>${escapeHtml(l.description)}</p><a href="/#/aviso/${l.id}">Ver aviso</a></body></html>`);
   });

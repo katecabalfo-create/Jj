@@ -428,6 +428,7 @@ function renderReceipt(db, pay) {
   @media print{button{display:none}body{margin:0}}
 </style></head><body>
 <div class="box">
+  <img src="/img/icon.svg" alt="Maldonado Oportunidades" width="48" height="48" style="display:block;margin-bottom:10px">
   <p class="muted" style="margin:0">${e(s.billing_name || s.site_name)}${s.billing_rut ? ` · RUT ${e(s.billing_rut)}` : ''}${s.billing_address ? ` · ${e(s.billing_address)}` : ''}</p>
   <h1>Comprobante de pago N.º ${pay.id}</h1>
   <table>
