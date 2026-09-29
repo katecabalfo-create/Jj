@@ -5,34 +5,10 @@ const assert = require('node:assert');
 const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
-const http = require('node:http');
 
 process.env.ADMIN_PASSWORD = 'secreto';
 process.env.SESSION_SECRET = 'test-secret';
-process.env.MP_ACCESS_TOKEN = 'TEST-token';
 process.env.PAYMENTS_DEMO = '1';
-
-// Servidor que simula la API de Mercado Pago.
-const mpPayments = {};
-const mp = http.createServer((req, res) => {
-  let body = '';
-  req.on('data', (c) => (body += c));
-  req.on('end', () => {
-    res.setHeader('content-type', 'application/json');
-    if (req.headers.authorization !== 'Bearer TEST-token') return res.writeHead(401).end('{}');
-    if (req.method === 'POST' && req.url === '/checkout/preferences') {
-      const pref = JSON.parse(body);
-      return res.end(JSON.stringify({ id: `pref-${pref.external_reference}`, init_point: `https://mp.example/checkout/${pref.external_reference}` }));
-    }
-    const m = req.url.match(/^\/v1\/payments\/(\w+)$/);
-    if (m && mpPayments[m[1]]) return res.end(JSON.stringify(mpPayments[m[1]]));
-    if (req.url.startsWith('/v1/payments/search')) {
-      const ref = new URL(req.url, 'http://x').searchParams.get('external_reference');
-      return res.end(JSON.stringify({ results: Object.values(mpPayments).filter((p) => p.external_reference === ref) }));
-    }
-    res.writeHead(404).end('{}');
-  });
-});
 
 let server;
 let base;
@@ -81,8 +57,6 @@ const listingForm = (extra = {}) => {
 
 let db;
 test.before(async () => {
-  await new Promise((r) => mp.listen(0, r));
-  process.env.MP_API_URL = `http://127.0.0.1:${mp.address().port}`;
   const { openDb, setSettings } = require('../src/db');
   const { createApp } = require('../src/app');
   db = openDb(':memory:');
@@ -93,7 +67,6 @@ test.before(async () => {
 });
 test.after(() => {
   server.close();
-  mp.close();
 });
 
 test('registro, login y permisos por tipo de cuenta', async () => {
@@ -195,32 +168,28 @@ test('empresa: aviso sin pagar no se publica; transferencia confirmada por admin
   assert.equal((await req('GET', '/api/account/me')).json.user, null);
 });
 
-test('alquileres: pago con Mercado Pago confirmado por webhook y verificación de monto', async () => {
+test('alquileres: plan destacado por transferencia y medios de pago disponibles', async () => {
   const req = client();
   await req('POST', '/api/account/register', { type: 'alquileres', name: 'Laura', email: 'laura@example.com', password: 'clave1234', accept_terms: true });
   const created = await req('POST', '/api/account/listings', listingForm({ category: 'alquileres', title: 'Casa en Punta Ballena', price: '1200', currency: 'USD' }));
   assert.equal(created.status, 201);
-  const plans = (await req('GET', '/api/account/plans')).json.plans;
-  const featured = plans.find((p) => p.featured);
-  const pay = await req('POST', `/api/account/listings/${created.json.id}/checkout`, { plan_id: featured.id, method: 'mercadopago' });
+  const plans = await req('GET', '/api/account/plans');
+  assert.ok(!plans.json.methods.includes('mercadopago'), 'no se ofrece Mercado Pago');
+  assert.ok(plans.json.methods.includes('transfer'));
+  const featured = plans.json.plans.find((p) => p.featured);
+  assert.equal((await req('POST', `/api/account/listings/${created.json.id}/checkout`, { plan_id: featured.id, method: 'mercadopago' })).status, 400);
+  const pay = await req('POST', `/api/account/listings/${created.json.id}/checkout`, { plan_id: featured.id, method: 'transfer' });
   assert.equal(pay.status, 201);
-  assert.match(pay.json.checkout_url, /mp\.example\/checkout\//);
-
-  // Webhook con monto menor: no se aprueba
-  mpPayments['111'] = { id: 111, status: 'approved', external_reference: String(pay.json.id), transaction_amount: 1, currency_id: 'UYU' };
-  await fetch(`${base}/api/payments/mercadopago/webhook?type=payment&data.id=111`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-  assert.equal(db.prepare('SELECT status FROM payments WHERE id = ?').get(pay.json.id).status, 'pending');
-
-  // Pago correcto
-  mpPayments['222'] = { id: 222, status: 'approved', external_reference: String(pay.json.id), transaction_amount: featured.price, currency_id: featured.currency };
-  const wh = await fetch(`${base}/api/payments/mercadopago/webhook?type=payment&data.id=222`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'payment', data: { id: '222' } }) });
-  assert.equal(wh.status, 200);
+  const admin = client();
+  await admin('POST', '/api/admin/login', { password: 'secreto' });
+  await admin('POST', `/api/admin/payments/${pay.json.id}/approve`, {});
   const p = await req('GET', `/api/account/payments/${pay.json.id}`);
   assert.equal(p.json.status, 'approved');
   assert.equal(p.json.listing.status, 'approved');
   const pub = await client()('GET', `/api/listings/${created.json.id}`);
   assert.equal(pub.status, 200);
   assert.equal(pub.json.featured, 1);
+  assert.equal((await fetch(`${base}/api/payments/mercadopago/webhook`, { method: 'POST' })).status, 404, 'ya no existe el webhook');
 });
 
 test('modo demo y renovación suman días', async () => {

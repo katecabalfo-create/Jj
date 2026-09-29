@@ -174,7 +174,7 @@ function migrate(db) {
       currency TEXT NOT NULL DEFAULT 'UYU',
       duration_days INTEGER NOT NULL DEFAULT 30,
       featured INTEGER NOT NULL DEFAULT 0,
-      method TEXT NOT NULL CHECK (method IN ('mercadopago','transfer','free','demo')),
+      method TEXT NOT NULL CHECK (method IN ('transfer','free','demo')),
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
       provider_ref TEXT NOT NULL DEFAULT '',
       provider_payment_id TEXT NOT NULL DEFAULT '',

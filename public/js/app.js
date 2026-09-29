@@ -566,7 +566,7 @@
     if (!META.freePosting) {
       view.innerHTML = `<div class="form-page">
         <h1>＋ Publicar en ${esc(META.siteName)}</h1>
-        <div class="steps-note">Creá tu cuenta gratis y gestioná tus avisos desde tu panel: editalos, pausalos, renovalos y mirá cuántas visitas tienen. Pagás con Mercado Pago o transferencia solo cuando publicás.</div>
+        <div class="steps-note">Creá tu cuenta gratis y gestioná tus avisos desde tu panel: editalos, pausalos, renovalos y mirá cuántas visitas tienen. Pagás por transferencia bancaria solo cuando publicás.</div>
         ${accountOptionsHtml(selected)}</div>`;
       return;
     }

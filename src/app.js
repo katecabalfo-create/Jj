@@ -297,23 +297,6 @@ function createApp(db, options = {}) {
   // ---------- Cuentas de anunciantes ----------
   app.use('/api/account', createAccountRouter(db, { handleUpload, prepareImages, discardUploads, baseUrl, rateLimiter, receiptDir }));
 
-  // ---------- Webhook de Mercado Pago ----------
-  app.post('/api/payments/mercadopago/webhook', async (req, res) => {
-    const type = req.query.type || req.query.topic || req.body?.type;
-    const dataId = String(req.query['data.id'] || req.query.id || req.body?.data?.id || '');
-    if (type !== 'payment' || !dataId) return res.sendStatus(200);
-    if (!payments.verifyMpSignature(req, dataId)) return res.sendStatus(401);
-    if (!payments.mpConfigured()) return res.sendStatus(200);
-    try {
-      const mp = await payments.fetchMpPayment(dataId);
-      payments.handleMpPayment(db, mp, baseUrl(req));
-      res.sendStatus(200);
-    } catch (err) {
-      console.error('Webhook Mercado Pago:', err.message);
-      res.sendStatus(500); // Mercado Pago reintenta
-    }
-  });
-
   // ---------- Alertas / notificaciones ----------
   function normalizeSub(body) {
     const errors = {};
@@ -416,7 +399,7 @@ function createApp(db, options = {}) {
     res.json({ ok: true });
   });
   app.get('/api/admin/me', (req, res) => {
-    res.json({ admin: auth.isAdmin(req), defaultPassword: auth.usingDefaultPassword(), smtp: smtpConfigured(), mercadopago: payments.mpConfigured() });
+    res.json({ admin: auth.isAdmin(req), defaultPassword: auth.usingDefaultPassword(), smtp: smtpConfigured() });
   });
 
   const admin = express.Router();
@@ -439,7 +422,7 @@ function createApp(db, options = {}) {
     const pendingReady = db.prepare("SELECT COUNT(*) n FROM listings WHERE status = 'pending' AND payment_status <> 'unpaid'").get().n;
     res.json({
       byStatus, byCategory, views, subs, outbox, last7, smtp: smtpConfigured(), users, revenue, revenue30,
-      pendingTransfers, unpaid, pendingReady, mercadopago: payments.mpConfigured(), demo: payments.demoEnabled(),
+      pendingTransfers, unpaid, pendingReady, demo: payments.demoEnabled(),
       transferReady: payments.availableMethods(db).includes('transfer'),
       receiptsToReview: db.prepare("SELECT COUNT(*) n FROM payments WHERE status = 'pending' AND method = 'transfer' AND receipt_file <> ''").get().n,
     });
@@ -610,7 +593,7 @@ function createApp(db, options = {}) {
       where.push('p.status = ?');
       args.push(req.query.status);
     }
-    if (['mercadopago', 'transfer', 'free', 'demo'].includes(req.query.method)) {
+    if (['transfer', 'free', 'demo'].includes(req.query.method)) {
       where.push('p.method = ?');
       args.push(req.query.method);
     }
@@ -654,9 +637,9 @@ function createApp(db, options = {}) {
       if (/^[=+\-@]/.test(t)) t = `'${t}`; // evita fórmulas al abrirlo en Excel
       return `"${t.replace(/"/g, '""')}"`;
     };
-    const header = ['N.º pago', 'Fecha de pago', 'Cliente', 'RUT', 'Dirección', 'Email', 'Concepto', 'Medio', 'Moneda', 'Monto', 'Ref. Mercado Pago'];
+    const header = ['N.º pago', 'Fecha de pago', 'Cliente', 'RUT', 'Dirección', 'Email', 'Concepto', 'Medio', 'Moneda', 'Monto'];
     const lines = rows.map((p) =>
-      [p.id, (p.paid_at || '').slice(0, 10), p.invoice_name, p.invoice_rut, p.invoice_address, p.email, p.description, p.method, p.currency, String(p.amount).replace('.', ','), p.provider_payment_id]
+      [p.id, (p.paid_at || '').slice(0, 10), p.invoice_name, p.invoice_rut, p.invoice_address, p.email, p.description, p.method, p.currency, String(p.amount).replace('.', ',')]
         .map(cell)
         .join(';'),
     );
@@ -674,11 +657,6 @@ function createApp(db, options = {}) {
     const pay = db.prepare('SELECT receipt_file FROM payments WHERE id = ?').get(Number(req.params.id));
     if (!pay || !pay.receipt_file) return res.status(404).json({ error: 'Sin comprobante' });
     res.sendFile(path.join(receiptDir, pay.receipt_file), { headers: { 'Cache-Control': 'private, no-store' } });
-  });
-  admin.post('/payments/:id/sync', async (req, res) => {
-    const pay = db.prepare('SELECT * FROM payments WHERE id = ?').get(Number(req.params.id));
-    if (!pay) return res.status(404).json({ error: 'No encontrado' });
-    res.json(await payments.syncPayment(db, pay, baseUrl(req)));
   });
 
   // Planes y precios

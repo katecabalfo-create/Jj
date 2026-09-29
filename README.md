@@ -41,23 +41,15 @@ Desde su panel cada anunciante puede:
 - Editar, pausar/reactivar, renovar (los días se suman al vencimiento actual) y eliminar.
 - Ver el historial de pagos y editar su perfil, que se muestra en su página pública (`/#/anunciante/ID`) con todos sus avisos.
 
-**Medios de pago:**
+**Medio de pago:**
 
-- **Mercado Pago** (tarjetas, Abitab, Redpagos): se activa con `MP_ACCESS_TOKEN`. El anunciante paga en el sitio seguro de Mercado Pago y el pago se confirma automáticamente por webhook (`/api/payments/mercadopago/webhook`). Siempre se consulta el pago a la API de Mercado Pago y se verifica monto y moneda antes de publicar.
 - **Transferencia bancaria a Itaú**: en **Admin → Ajustes** cargás tu cuenta Itaú en pesos y/o dólares, el tipo de cuenta (caja de ahorro o cuenta corriente), el titular y su RUT o CI. El anunciante ve una ficha con esos datos, el monto exacto y la referencia "Pago N", cada uno con botón **Copiar**. Transfiere desde Itaú o desde cualquier otro banco y **sube el comprobante** (imagen o PDF) desde su panel. Te llega un email, ves el comprobante en **Admin → Pagos**, tocás **Confirmar** y el aviso se publica solo. Los comprobantes se guardan fuera de la carpeta pública (`data/receipts/`) y solo los ven el anunciante y el administrador. La transferencia se ofrece únicamente para los planes cuya moneda tenga una cuenta cargada.
 
-**En el panel de administración** se suman: **Anunciantes** (buscar, verificar con ✔️, suspender o eliminar cuentas), **Pagos** (ingresos, confirmar o rechazar transferencias, consultar Mercado Pago) y **Planes y precios** (crear o editar planes por tipo de cuenta: precio, moneda, días y si es destacado).
+**En el panel de administración** se suman: **Anunciantes** (buscar, verificar con ✔️, suspender o eliminar cuentas), **Pagos** (ingresos, confirmar o rechazar transferencias) y **Planes y precios** (crear o editar planes por tipo de cuenta: precio, moneda, días y si es destacado).
 
 Los precios iniciales son ejemplos ($ 490 / $ 990 empresas, $ 290 / $ 590 servicios, $ 390 / $ 790 alquileres, por 30 días). Cambialos en **Admin → Planes y precios**.
 
 La publicación gratuita sin cuenta queda desactivada. Si la querés, activala en **Admin → Ajustes**.
-
-### Configurar Mercado Pago
-
-1. Entrá a https://www.mercadopago.com.uy/developers → **Tus integraciones** → creá una aplicación (tipo "Pagos online", producto **Checkout Pro**).
-2. Copiá el **Access Token de producción** en `MP_ACCESS_TOKEN`. Para probar, usá las credenciales de prueba con `MP_USE_SANDBOX=1`.
-3. En **Webhooks**, configurá la URL `https://TU-DOMINIO/api/payments/mercadopago/webhook` con el evento **Pagos**, y copiá la clave secreta en `MP_WEBHOOK_SECRET`.
-4. `BASE_URL` tiene que ser tu dominio con `https://`, para que Mercado Pago pueda avisar y devolver al anunciante a su panel.
 
 Para probar todo el recorrido sin cobrar, arrancá con `PAYMENTS_DEMO=1`: aparece un "pago de prueba" que aprueba al instante. No lo dejes activo en producción.
 
@@ -124,7 +116,6 @@ La primera vez se cargan unos avisos de ejemplo para ver el sitio funcionando; b
    | `SEED` | `0` (así arranca sin avisos de ejemplo) |
    | `BASE_URL` | `https://tu-dominio` (ver el paso 5) |
    | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | los datos de tu servicio de email |
-   | `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | las credenciales de Mercado Pago |
 
 5. En **Settings → Networking**, tocá **Generate Domain** para tener una dirección `*.up.railway.app`, o **Custom Domain** para usar tu dominio. Si usás tu dominio, Railway te indica el registro CNAME que tenés que cargar donde lo compraste. Poné esa dirección en `BASE_URL`.
 6. Cada vez que se une un cambio a `main`, Railway vuelve a publicar el sitio solo.
@@ -158,7 +149,7 @@ src/app.js           rutas web y API (pública y de administración)
 src/listings.js      búsqueda, filtros, orden, paginación y validación
 src/notify.js        alertas por email y resúmenes
 src/account.js       API de cuentas de anunciantes (registro, avisos propios, pagos)
-src/payments.js      Mercado Pago, transferencias y aplicación de pagos
+src/payments.js      Transferencias y aplicación de pagos
 src/crm.js           CRM: contactos, segmentos, notas, etiquetas y campañas de email
 src/db.js            esquema SQLite y ajustes
 src/categories.js    secciones, localidades y departamentos
