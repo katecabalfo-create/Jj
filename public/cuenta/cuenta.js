@@ -185,6 +185,7 @@
       <div class="field"><label for="r-phone">Teléfono / WhatsApp</label><input id="r-phone" name="phone" type="tel" autocomplete="tel"></div>
       <div class="field"><label for="r-email">Email *</label><input id="r-email" name="email" type="email" autocomplete="email" required></div>
       <div class="field"><label for="r-pw">Contraseña * <small>(mínimo 8 caracteres)</small></label><input id="r-pw" name="password" type="password" autocomplete="new-password" required minlength="8"></div>
+      <div class="field"><label class="check"><input type="checkbox" name="marketing_opt_in" value="1" checked> Quiero recibir novedades y promociones por email (podés darte de baja cuando quieras).</label></div>
       <div class="field"><label class="check"><input type="checkbox" name="accept_terms" value="on"> Acepto las <a href="/#/terminos" target="_blank">condiciones de uso</a> y la <a href="/#/privacidad" target="_blank">política de privacidad</a>.</label></div>
       <button class="btn btn-primary" style="width:100%">Crear cuenta</button>
       <p style="text-align:center;font-size:.92rem">¿Ya tenés cuenta? <a href="#/ingresar">Ingresá</a></p>
@@ -194,6 +195,7 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const body = Object.fromEntries(new FormData(form));
+      body.marketing_opt_in = form.marketing_opt_in.checked;
       try {
         const r = await api('/api/account/register', { method: 'POST', json: body });
         USER = r.user;
@@ -759,6 +761,7 @@
           <div class="field"><label>Sitio web</label><input name="website" value="${esc(USER.website)}"></div>
           <div class="field"><label>Dirección de facturación <small>(aparece en tus comprobantes junto al RUT)</small></label><input name="billing_address" value="${esc(USER.billing_address || '')}" maxlength="200"></div>
           <div class="field"><label>Sobre ${USER.type === 'empresa' ? 'la empresa' : 'vos'} <small>(se muestra en tu página pública)</small></label><textarea name="about" rows="4">${esc(USER.about)}</textarea></div>
+          <label class="check" style="margin-bottom:14px"><input type="checkbox" name="marketing_opt_in" ${USER.marketing_opt_in ? 'checked' : ''}> Recibir novedades y promociones por email</label>
           <button class="btn btn-primary" style="width:100%">Guardar perfil</button>
         </form>
         <form id="password" class="panel" style="margin-top:16px" novalidate>
@@ -772,7 +775,9 @@
     $('#profile').addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        const r = await api('/api/account/me', { method: 'PUT', json: Object.fromEntries(new FormData(e.target)) });
+        const data = Object.fromEntries(new FormData(e.target));
+        data.marketing_opt_in = e.target.marketing_opt_in.checked;
+        const r = await api('/api/account/me', { method: 'PUT', json: data });
         USER = r.user;
         toast('Perfil guardado');
       } catch (err) {

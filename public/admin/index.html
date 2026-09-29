@@ -36,6 +36,17 @@
       pre.mail { white-space: pre-wrap; font-size: 0.85rem; margin: 6px 0 0; }
       fieldset { border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 0 0 16px; }
       legend { font-weight: 700; padding: 0 6px; }
+      .crm-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+      .crm-filters { grid-template-columns: 1fr 1fr; }
+      @media (min-width: 900px) { .crm-filters { grid-template-columns: repeat(4, minmax(0, 1fr)); } .crm-filters .full { grid-column: span 2; } }
+      .crm-seg { grid-template-columns: 1fr 1fr; margin: 0 0 8px; }
+      .crm-grid { display: grid; gap: 16px; margin-bottom: 20px; }
+      @media (min-width: 900px) { .crm-grid { grid-template-columns: 1fr 1fr; align-items: start; } }
+      .crm-notes { display: grid; gap: 8px; margin-top: 12px; }
+      .crm-note { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+      .linkish { background: none; border: 0; padding: 0; color: var(--danger); cursor: pointer; font: inherit; }
+      .crm-preview iframe { width: 100%; height: 620px; border: 1px solid var(--border); border-radius: 10px; background: #f4f7f9; }
+      a.chip { text-decoration: none; }
     </style>
   </head>
   <body>
@@ -53,6 +64,7 @@
         <a href="#/avisos">📋 Avisos</a>
         <a href="#/avisos/nuevo">＋ Nuevo</a>
         <a href="#/usuarios">👥 Anunciantes</a>
+        <a href="#/crm">📇 CRM</a>
         <a href="#/pagos">💳 Pagos</a>
         <a href="#/planes">🏷️ Planes y precios</a>
         <a href="#/alertas">🔔 Notificaciones</a>
@@ -62,6 +74,7 @@
     <main class="wrap" id="view"></main>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <script src="/js/shared.js" defer></script>
+    <script src="/admin/crm.js" defer></script>
     <script src="/admin/admin.js" defer></script>
   </body>
 </html>

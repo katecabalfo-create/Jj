@@ -207,6 +207,44 @@ function migrate(db) {
   addColumn(db, 'payments', 'invoice_name', "TEXT NOT NULL DEFAULT ''");
   addColumn(db, 'payments', 'invoice_rut', "TEXT NOT NULL DEFAULT ''");
   addColumn(db, 'payments', 'invoice_address', "TEXT NOT NULL DEFAULT ''");
+  // CRM: preferencias de promociones, etiquetas y notas de cada anunciante
+  if (addColumn(db, 'users', 'marketing_opt_in', 'INTEGER NOT NULL DEFAULT 1')) db.exec('UPDATE users SET marketing_opt_in = 1');
+  addColumn(db, 'users', 'marketing_token', "TEXT NOT NULL DEFAULT ''");
+  addColumn(db, 'users', 'tags', "TEXT NOT NULL DEFAULT '[]'");
+  addColumn(db, 'outbox', 'html', "TEXT NOT NULL DEFAULT ''");
+  addColumn(db, 'outbox', 'campaign_id', 'INTEGER');
+  addColumn(db, 'outbox', 'unsubscribe_url', "TEXT NOT NULL DEFAULT ''");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS crm_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_crm_notes_user ON crm_notes(user_id);
+
+    CREATE TABLE IF NOT EXISTS campaigns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      cta_text TEXT NOT NULL DEFAULT '',
+      cta_url TEXT NOT NULL DEFAULT '',
+      segment TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','sent')),
+      recipients INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      sent_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS campaign_recipients (
+      campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      email TEXT NOT NULL,
+      open_token TEXT NOT NULL,
+      opened_at TEXT,
+      PRIMARY KEY (campaign_id, user_id)
+    );
+  `);
   db.exec(`
     CREATE TABLE IF NOT EXISTS listing_views_daily (
       listing_id INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE,

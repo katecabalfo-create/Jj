@@ -13,6 +13,7 @@ const { notifyNewListing, buildDigests, flushOutbox, smtpConfigured, enqueueEmai
 const auth = require('./auth');
 const payments = require('./payments');
 const { createAccountRouter, publicAdvertiser, renderReceipt } = require('./account');
+const { createCrm } = require('./crm');
 const { ACCOUNT_TYPES, ACCOUNT_TYPE_IDS } = require('./categories');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -720,6 +721,11 @@ function createApp(db, options = {}) {
     db.prepare('UPDATE plans SET active = 0 WHERE id = ?').run(Number(req.params.id));
     res.json({ ok: true });
   });
+
+  // CRM de anunciantes: contactos, segmentos y campañas de email
+  const crm = createCrm(db, { baseUrl, requireAdmin: auth.requireAdmin });
+  app.use('/api/crm', crm.pub);
+  app.use('/api/admin/crm', crm.admin);
 
   app.use('/api/admin', admin);
 
