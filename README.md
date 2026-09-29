@@ -108,7 +108,28 @@ ADMIN_PASSWORD=tu-clave npm start
 
 La primera vez se cargan unos avisos de ejemplo para ver el sitio funcionando; borralos desde el panel o arrancá con `SEED=0`.
 
-### Con Docker
+### Publicarlo en Railway (recomendado)
+
+1. Creá una cuenta en https://railway.com entrando con tu usuario de GitHub.
+2. **New Project → Deploy from GitHub repo** → elegí este repositorio. Railway usa el `Dockerfile` automáticamente.
+3. En el servicio, entrá a **Settings → Volumes → New Volume** y montalo en `/app/data`. Ahí quedan la base de datos, las fotos y los comprobantes.
+4. En **Variables** cargá:
+
+   | Variable | Valor |
+   |---|---|
+   | `ADMIN_PASSWORD` | la contraseña del panel |
+   | `SESSION_SECRET` | un texto largo inventado (40 letras y números al azar) |
+   | `NODE_ENV` | `production` |
+   | `UPLOADS_DIR` | `/app/data/uploads` |
+   | `SEED` | `0` (así arranca sin avisos de ejemplo) |
+   | `BASE_URL` | `https://tu-dominio` (ver el paso 5) |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | los datos de tu servicio de email |
+   | `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | las credenciales de Mercado Pago |
+
+5. En **Settings → Networking**, tocá **Generate Domain** para tener una dirección `*.up.railway.app`, o **Custom Domain** para usar tu dominio. Si usás tu dominio, Railway te indica el registro CNAME que tenés que cargar donde lo compraste. Poné esa dirección en `BASE_URL`.
+6. Cada vez que se une un cambio a `main`, Railway vuelve a publicar el sitio solo.
+
+
 
 ```bash
 docker build -t maldonado-oportunidades .

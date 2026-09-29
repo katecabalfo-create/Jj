@@ -38,7 +38,7 @@ function rateLimiter(max, windowMs) {
 }
 
 function createApp(db, options = {}) {
-  const uploadDir = options.uploadDir || path.join(__dirname, '..', 'uploads');
+  const uploadDir = options.uploadDir || process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
   const receiptDir = options.receiptDir || process.env.RECEIPTS_DIR || path.join(__dirname, '..', 'data', 'receipts');
   fs.mkdirSync(uploadDir, { recursive: true });
 
