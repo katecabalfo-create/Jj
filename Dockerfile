@@ -5,6 +5,5 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
 RUN mkdir -p data uploads
-VOLUME ["/app/data", "/app/uploads"]
 EXPOSE 3000
 CMD ["npm", "start"]
