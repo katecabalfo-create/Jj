@@ -47,7 +47,20 @@ Desde su panel cada anunciante puede:
 
 **En el panel de administración** se suman: **Anunciantes** (buscar, verificar con ✔️, suspender o eliminar cuentas), **Pagos** (ingresos, confirmar o rechazar transferencias) y **Planes y precios** (crear o editar planes por tipo de cuenta: precio, moneda, días y si es destacado).
 
-Los precios iniciales son ejemplos ($ 490 / $ 990 empresas, $ 290 / $ 590 servicios, $ 390 / $ 790 alquileres, por 30 días). Cambialos en **Admin → Planes y precios**.
+Planes iniciales, iguales para empresas, servicios y alquileres (en pesos):
+
+| Plan | Duración | Precio | Destacado (+20%) |
+|---|---|---|---|
+| Individual – solo historias | 24 horas | $ 1.250 | $ 1.500 |
+| Individual completa | 24 horas | $ 1.900 | $ 2.280 |
+| Plan Impulso | 1 semana | $ 3.900 | $ 4.680 |
+| Plan Impulso | 2 semanas | $ 6.900 | $ 8.280 |
+| Plan Alcance | 1 semana | $ 5.900 | $ 7.080 |
+| Plan Alcance | 2 semanas | $ 10.500 | $ 12.600 |
+| Plan Presencia Total | 2 semanas | $ 13.900 | $ 16.680 |
+| Plan Presencia Total | 1 mes | $ 24.900 | $ 29.880 |
+
+El aviso queda visible exactamente el tiempo pagado, contado desde que se confirma el pago (o desde el vencimiento actual si se renueva antes). Al terminar se da de baja solo, y el destacado también vence con su plan. Los planes se cambian en **Admin → Planes y precios**.
 
 La publicación gratuita sin cuenta queda desactivada. Si la querés, activala en **Admin → Ajustes**.
 

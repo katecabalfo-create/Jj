@@ -473,7 +473,11 @@ function createApp(db, options = {}) {
       discardUploads(req);
       return res.status(400).json({ error: 'Revisá los campos marcados.', fields: errors });
     }
-    if (req.body.featured !== undefined) data.featured = req.body.featured === '1' || req.body.featured === 'on' || req.body.featured === true ? 1 : 0;
+    if (req.body.featured !== undefined) {
+      // Un destacado puesto o quitado a mano por el admin no vence solo.
+      data.featured = req.body.featured === '1' || req.body.featured === 'on' || req.body.featured === true ? 1 : 0;
+      data.featured_until = null;
+    }
     if (req.body.paused !== undefined) data.paused = req.body.paused === '1' || req.body.paused === true ? 1 : 0;
     if (['none', 'unpaid', 'paid'].includes(req.body.payment_status)) data.payment_status = req.body.payment_status;
     updateListing(db, id, data);
@@ -496,7 +500,7 @@ function createApp(db, options = {}) {
       if (['approved', 'rejected', 'pending'].includes(action)) n += applyStatus(id, action, req) ? 1 : 0;
       else if (action === 'delete') n += db.prepare('DELETE FROM listings WHERE id = ?').run(id).changes;
       else if (action === 'feature' || action === 'unfeature') {
-        n += db.prepare('UPDATE listings SET featured = ? WHERE id = ?').run(action === 'feature' ? 1 : 0, id).changes;
+        n += db.prepare('UPDATE listings SET featured = ?, featured_until = NULL WHERE id = ?').run(action === 'feature' ? 1 : 0, id).changes;
       } else return res.status(400).json({ error: 'Acción no válida' });
     }
     res.json({ ok: true, affected: n });

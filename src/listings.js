@@ -13,9 +13,16 @@ const SORTS = {
   title: 'l.title COLLATE NOCASE ASC',
 };
 
+// Momento actual y vencimiento como texto ISO comparable. Un vencimiento con solo fecha (AAAA-MM-DD) vale hasta el final de ese día;
+// los planes pagos guardan fecha y hora exactas, así el aviso se da de baja justo cuando termina el tiempo pagado.
+const NOW_TS = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
+const expiresTs = (col) => `(CASE WHEN length(${col}) = 10 THEN ${col} || 'T23:59:59.999Z' ELSE ${col} END)`;
+const IS_VIGENTE = (col = 'l.expires_at') => `(${col} IS NULL OR ${col} = '' OR ${expiresTs(col)} > ${NOW_TS})`;
+const IS_VENCIDO = (col = 'l.expires_at') => `(${col} IS NOT NULL AND ${col} <> '' AND ${expiresTs(col)} <= ${NOW_TS})`;
+
 // Condición para que un aviso sea visible al público: aprobado, vigente, pagado si lo requiere y con cuenta activa.
 const PUBLIC_WHERE = `l.status = 'approved'
-  AND (l.expires_at IS NULL OR l.expires_at = '' OR l.expires_at >= strftime('%Y-%m-%d','now'))
+  AND ${IS_VIGENTE()}
   AND l.payment_status <> 'unpaid' AND l.paused = 0
   AND (l.user_id IS NULL OR EXISTS (SELECT 1 FROM users u WHERE u.id = l.user_id AND u.active = 1))`;
 
@@ -75,7 +82,7 @@ function searchListings(db, params, { admin = false, ownerId = null, defaultPage
       where.push('l.payment_status = ?');
       args.push(params.payment);
     }
-    if (params.expired === '1') where.push("l.expires_at IS NOT NULL AND l.expires_at <> '' AND l.expires_at < strftime('%Y-%m-%d','now')");
+    if (params.expired === '1') where.push(IS_VENCIDO());
   } else {
     where.push(PUBLIC_WHERE);
   }
@@ -221,7 +228,7 @@ function validateListing(input, { partial = false } = {}) {
   for (const k of ['event_date', 'expires_at']) {
     if (input[k] === undefined) continue;
     const v = String(input[k] || '').trim();
-    if (v && !/^\d{4}-\d{2}-\d{2}/.test(v)) errors[k] = 'Fecha no válida.';
+    if (v && !/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z?)?$/.test(v)) errors[k] = 'Fecha no válida.';
     else data[k] = v || null;
   }
 
@@ -250,4 +257,11 @@ function updateListing(db, id, data) {
   ).run(...keys.map((k) => data[k]), id);
 }
 
-module.exports = { PUBLIC_WHERE, searchListings, getPublicListing, validateListing, insertListing, updateListing, SORTS, FIELDS };
+/** Quita el destacado a los avisos cuyo período destacado pagado terminó. */
+function expireFeatured(db) {
+  return db
+    .prepare(`UPDATE listings SET featured = 0, featured_until = NULL WHERE featured = 1 AND ${IS_VENCIDO('featured_until')}`)
+    .run().changes;
+}
+
+module.exports = { PUBLIC_WHERE, IS_VIGENTE, IS_VENCIDO, expireFeatured, searchListings, getPublicListing, validateListing, insertListing, updateListing, SORTS, FIELDS };

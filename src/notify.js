@@ -137,6 +137,20 @@ async function flushOutbox(db) {
   return { sent, pending: 0 };
 }
 
+/** Fecha de vencimiento legible en hora de Uruguay: "07/10/2026" o "07/10/2026 a las 15:30". */
+function formatExpiry(value) {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  const date = new Date(value);
+  const opts = { timeZone: 'America/Montevideo' };
+  const day = date.toLocaleDateString('es-UY', { ...opts, day: '2-digit', month: '2-digit', year: 'numeric' });
+  const time = date.toLocaleTimeString('es-UY', { ...opts, hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${day} a las ${time}`;
+}
+
 /**
  * Avisa por email a los anunciantes cuyos avisos vencen en los próximos días.
  * Se envía una vez por cada fecha de vencimiento (si renuevan, se vuelve a avisar antes del nuevo vencimiento).
@@ -149,21 +163,21 @@ function sendExpiryReminders(db, baseUrl) {
     .prepare(
       `SELECT l.id, l.title, l.expires_at, u.email, u.name FROM listings l JOIN users u ON u.id = l.user_id
        WHERE l.status = 'approved' AND l.payment_status = 'paid' AND u.active = 1
-         AND l.expires_at >= date('now') AND l.expires_at <= date('now', ?)
+         AND l.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now') AND substr(l.expires_at, 1, 10) <= date('now', ?)
          AND l.expiry_notice_for <> l.expires_at`,
     )
     .all(`+${days} days`);
   for (const r of rows) {
-    const [y, m, d] = r.expires_at.slice(0, 10).split('-');
+    const when = formatExpiry(r.expires_at);
     enqueueEmail(
       db,
       r.email,
-      `Tu aviso vence el ${d}/${m}/${y}: ${r.title}`,
-      `Hola ${r.name}, tu aviso "${r.title}" deja de mostrarse el ${d}/${m}/${y}.\nRenovalo para que siga visible (los días se suman al vencimiento actual):\n${baseUrl}/cuenta/#/avisos/${r.id}/pagar`,
+      `Tu aviso vence el ${when}: ${r.title}`,
+      `Hola ${r.name}, tu aviso "${r.title}" deja de mostrarse el ${when}.\nRenovalo para que siga visible (los días se suman al vencimiento actual):\n${baseUrl}/cuenta/#/avisos/${r.id}/pagar`,
     );
     db.prepare('UPDATE listings SET expiry_notice_for = expires_at WHERE id = ?').run(r.id);
   }
   return rows.length;
 }
 
-module.exports = { sendExpiryReminders, notifyNewListing, buildDigests, flushOutbox, smtpConfigured, matches, enqueueEmail };
+module.exports = { formatExpiry, sendExpiryReminders, notifyNewListing, buildDigests, flushOutbox, smtpConfigured, matches, enqueueEmail };
