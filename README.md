@@ -60,7 +60,7 @@ Planes iniciales, iguales para empresas, servicios y alquileres (en pesos):
 | Plan Presencia Total | 2 semanas | $ 13.900 | $ 16.680 |
 | Plan Presencia Total | 1 mes | $ 24.900 | $ 29.880 |
 
-El aviso queda visible exactamente el tiempo pagado, contado desde que se confirma el pago (o desde el vencimiento actual si se renueva antes). Al terminar se da de baja solo, y el destacado también vence con su plan. Los planes se cambian en **Admin → Planes y precios**.
+El aviso queda visible exactamente el tiempo pagado, contado desde que se confirma el pago (o desde el vencimiento actual si se renueva antes). Al terminar se da de baja solo, y el destacado también vence con su plan. Cuando un anunciante renueva un aviso, te llega un email al **Email de contacto / administración** (Admin → Configuración) y el pago aparece marcado con 🔁 Renovación en **Pagos**. Los planes se cambian en **Admin → Planes y precios**.
 
 La publicación gratuita sin cuenta queda desactivada. Si la querés, activala en **Admin → Ajustes**.
 

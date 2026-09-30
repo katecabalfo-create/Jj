@@ -269,6 +269,7 @@ function migrate(db) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_listings_user ON listings(user_id)');
 
   addColumn(db, 'listings', 'featured_until', 'TEXT');
+  addColumn(db, 'payments', 'renewal', 'INTEGER NOT NULL DEFAULT 0');
 
   const planNames = db.prepare('SELECT name FROM plans').all().map((p) => p.name);
   if (planNames.length && planNames.every((n) => OLD_DEFAULT_PLAN_NAMES.includes(n))) db.exec('DELETE FROM plans');

@@ -279,3 +279,34 @@ test('planes por semanas con destacado +20% y baja automática al terminar el ti
   assert.equal(l.featured, 0);
   assert.equal((await client()('GET', `/api/listings/${id}`)).status, 200);
 });
+
+test('renovar un aviso le avisa al administrador por email y se marca en Pagos', async () => {
+  const admin = client();
+  await admin('POST', '/api/admin/login', { password: 'secreto' });
+  await admin('PUT', '/api/admin/settings', { contact_email: 'dueña@maldonado.example' });
+  const req = client();
+  await req('POST', '/api/account/register', { type: 'servicios', name: 'Rita', email: 'rita@example.com', password: 'clave1234', accept_terms: true });
+  const created = await req('POST', '/api/account/listings', listingForm({ category: 'avisos-maldonado', title: 'Limpieza de piscinas' }));
+  const id = created.json.id;
+  const plans = (await req('GET', '/api/account/plans')).json.plans;
+  const plan = plans.find((p) => p.name === 'Plan Impulso – 1 semana');
+  const mails = () => db.prepare("SELECT subject, body FROM outbox WHERE to_email = 'dueña@maldonado.example' AND subject LIKE 'Renovación%'").all();
+
+  // Primera compra: no es renovación
+  const first = await req('POST', `/api/account/listings/${id}/checkout`, { plan_id: plan.id, method: 'demo' });
+  assert.equal(first.json.renewal, 0);
+  assert.equal(mails().length, 0);
+
+  // Renovar: avisa al admin con el plan, el monto y el vencimiento actual
+  const again = await req('POST', `/api/account/listings/${id}/checkout`, { plan_id: plan.id, method: 'transfer' });
+  assert.equal(again.status, 201);
+  assert.equal(again.json.renewal, 1);
+  const sent = mails();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].subject, /Limpieza de piscinas/);
+  assert.match(sent[0].body, /Rita \(rita@example\.com\) eligió renovar/);
+  assert.match(sent[0].body, /Plan Impulso – 1 semana — \$ 3\.900/);
+  assert.match(sent[0].body, /vigente hasta el/);
+  const pays = (await admin('GET', '/api/admin/payments?status=pending')).json;
+  assert.equal(pays.find((p) => p.id === again.json.id).renewal, 1);
+});

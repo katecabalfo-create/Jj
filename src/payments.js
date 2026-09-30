@@ -1,9 +1,8 @@
 'use strict';
 
 const { getSettings } = require('./db');
-const { formatExpiry } = require('./notify');
 const { updateListing } = require('./listings');
-const { notifyNewListing, enqueueEmail } = require('./notify');
+const { notifyNewListing, enqueueEmail, formatExpiry } = require('./notify');
 
 const demoEnabled = () => process.env.PAYMENTS_DEMO === '1';
 
@@ -103,6 +102,26 @@ function transferDetails(db, currency) {
 }
 
 /** Crea el pago. La transferencia queda pendiente hasta que el administrador la confirma. */
+/** Avisa al administrador (email de contacto) que un anunciante eligió renovar un aviso. */
+function notifyRenewal(db, { user, listing, plan, method, paymentId, baseUrl }) {
+  const to = getSettings(db).contact_email;
+  if (!to) return;
+  const current = expiryMs(listing.expires_at);
+  const state = current > Date.now() ? `vigente hasta el ${formatExpiry(listing.expires_at)}` : listing.expires_at ? `vencido el ${formatExpiry(listing.expires_at)}` : 'sin vencimiento';
+  const money = `${plan.currency === 'USD' ? 'US$' : '$'} ${Number(plan.price).toLocaleString('es-UY')}`;
+  const next = method === 'transfer' ? `Cuando llegue la transferencia, confirmala en Pagos: ${baseUrl}/admin/#/pagos?status=pending&method=transfer` : `Pago #${paymentId}: ${baseUrl}/admin/#/pagos`;
+  enqueueEmail(
+    db,
+    to,
+    `Renovación: ${listing.title}`,
+    `${user.business_name || user.name} (${user.email}) eligió renovar su aviso "${listing.title}".
+` +
+      `Plan: ${plan.name} — ${money}
+El aviso está ${state}.
+${next}`,
+  );
+}
+
 async function createCheckout(db, { user, listing, plan, method, baseUrl }) {
   const free = Number(plan.price) === 0;
   const m = free ? 'free' : method;
@@ -112,18 +131,21 @@ async function createCheckout(db, { user, listing, plan, method, baseUrl }) {
   }
 
   const description = `${plan.name} — ${listing.title}`.slice(0, 250);
+  // Es una renovación si el aviso ya estaba pago (vigente o vencido).
+  const renewal = listing.payment_status === 'paid' ? 1 : 0;
   const id = Number(
     db
       .prepare(
-        `INSERT INTO payments (user_id, listing_id, plan_id, description, amount, currency, duration_days, featured, method, invoice_name, invoice_rut, invoice_address)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO payments (user_id, listing_id, plan_id, description, amount, currency, duration_days, featured, method, renewal, invoice_name, invoice_rut, invoice_address)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        user.id, listing.id, plan.id, description, plan.price, plan.currency, plan.duration_days, plan.featured, m,
+        user.id, listing.id, plan.id, description, plan.price, plan.currency, plan.duration_days, plan.featured, m, renewal,
         user.business_name || user.name, user.rut || '', user.billing_address || '',
       ).lastInsertRowid,
   );
   if (listing.payment_status !== 'paid') updateListing(db, listing.id, { payment_status: 'unpaid' });
+  if (renewal) notifyRenewal(db, { user, listing, plan, method: m, paymentId: id, baseUrl });
 
   if (m === 'free' || m === 'demo') {
     applyPayment(db, id, { note: m === 'demo' ? 'Pago de prueba (modo demo)' : 'Plan gratuito' }, baseUrl);
