@@ -52,7 +52,7 @@
   const TYPES = { empresa: '🏢 Empresa', servicios: '🛠️ Servicios', alquileres: '🏠 Alquileres' };
   const PAY = { pending: 'Pendiente', approved: 'Aprobado', rejected: 'Rechazado', cancelled: 'Cancelado' };
   const PAYB = { pending: 'badge-pending', approved: 'badge-approved', rejected: 'badge-rejected', cancelled: '' };
-  const METHOD = { mercadopago: 'Mercado Pago', transfer: 'Transferencia Itaú', free: 'Gratis', demo: 'Demo' };
+  const METHOD = { transfer: 'Transferencia Itaú', free: 'Gratis', demo: 'Demo' };
   const opt = (v, l, cur) => `<option value="${esc(v)}" ${String(cur ?? '') === String(v) ? 'selected' : ''}>${esc(l)}</option>`;
 
   function parseHash() {
@@ -105,7 +105,6 @@
     }
     view.innerHTML = `
       ${ME.defaultPassword ? '<div class="alert">⚠️ Estás usando la contraseña por defecto. Definí la variable de entorno <code>ADMIN_PASSWORD</code> en el servidor.</div>' : ''}
-      ${!s.mercadopago ? '<div class="alert">💳 Mercado Pago no está configurado: definí <code>MP_ACCESS_TOKEN</code> en el servidor para cobrar con tarjeta. Mientras tanto se puede pagar por transferencia.</div>' : ''}
       ${!s.transferReady ? '<div class="alert">🏦 La transferencia bancaria no está disponible: cargá tu cuenta Itaú en <a href="#/ajustes">Ajustes</a>.</div>' : ''}
       ${s.receiptsToReview ? `<div class="alert">📎 Hay ${s.receiptsToReview} comprobante(s) de transferencia para revisar. <a href="#/pagos?status=pending&method=transfer">Revisar →</a></div>` : ''}
       ${s.demo ? '<div class="alert">🧪 Modo de pagos de prueba activo (<code>PAYMENTS_DEMO=1</code>). Desactivalo antes de abrir el sitio al público.</div>' : ''}
@@ -416,7 +415,7 @@
           <label class="check"><input type="checkbox" name="moderation" value="1" ${s.moderation === '1' ? 'checked' : ''}> Revisar los avisos anónimos (sin cuenta) antes de publicarlos</label>
         </fieldset>
         <fieldset><legend>💳 Cobros a anunciantes</legend>
-          <p class="muted" style="margin-top:0">Mercado Pago: ${ME.mercadopago ? '✅ configurado' : '❌ sin configurar (definí <code>MP_ACCESS_TOKEN</code> en el servidor; ver README)'}. Los precios se editan en <a href="#/planes">Planes y precios</a>.</p>
+          <p class="muted" style="margin-top:0">Los anunciantes pagan por transferencia bancaria y vos confirmás cada pago en <a href="#/pagos">Pagos</a>. Los precios se editan en <a href="#/planes">Planes y precios</a>.</p>
           <label class="check" style="margin-bottom:12px"><input type="checkbox" name="payments_transfer_enabled" value="1" ${s.payments_transfer_enabled === '1' ? 'checked' : ''}> Aceptar transferencia bancaria (se confirma a mano en <a href="#/pagos">Pagos</a>)</label>
           <div class="row-2">
             <div class="field"><label>Banco</label><input name="transfer_bank" value="${esc(s.transfer_bank)}"></div>
@@ -566,7 +565,7 @@
                   (p) => `<tr>
           <td>${p.id}</td>
           <td><a href="#/usuarios?id=${p.user_id}">${esc(p.business_name || p.name)}</a><div class="muted" style="font-size:.8rem">${esc(p.email)}</div></td>
-          <td>${esc(p.description)}${p.listing_id ? ` <a href="#/avisos/${p.listing_id}" style="font-size:.8rem">(aviso #${p.listing_id})</a>` : ''}${p.note ? `<div class="muted" style="font-size:.8rem">${esc(p.note)}</div>` : ''}${p.provider_payment_id ? `<div class="muted" style="font-size:.8rem">MP #${esc(p.provider_payment_id)}</div>` : ''}${p.receipt_file ? `<div style="font-size:.85rem;margin-top:4px"><a href="/api/admin/payments/${p.id}/receipt" target="_blank">📎 Ver comprobante</a> <span class="muted">(${fmtDate(p.receipt_at)})</span></div>` : p.method === 'transfer' && p.status === 'pending' ? '<div class="muted" style="font-size:.8rem">Sin comprobante todavía</div>' : ''}${p.payer_note ? `<div class="muted" style="font-size:.8rem">💬 ${esc(p.payer_note)}</div>` : ''}</td>
+          <td>${esc(p.description)}${p.listing_id ? ` <a href="#/avisos/${p.listing_id}" style="font-size:.8rem">(aviso #${p.listing_id})</a>` : ''}${p.note ? `<div class="muted" style="font-size:.8rem">${esc(p.note)}</div>` : ''}${p.receipt_file ? `<div style="font-size:.85rem;margin-top:4px"><a href="/api/admin/payments/${p.id}/receipt" target="_blank">📎 Ver comprobante</a> <span class="muted">(${fmtDate(p.receipt_at)})</span></div>` : p.method === 'transfer' && p.status === 'pending' ? '<div class="muted" style="font-size:.8rem">Sin comprobante todavía</div>' : ''}${p.payer_note ? `<div class="muted" style="font-size:.8rem">💬 ${esc(p.payer_note)}</div>` : ''}</td>
           <td style="white-space:nowrap"><strong>${money(p.amount, p.currency)}</strong></td>
           <td>${METHOD[p.method]}</td>
           <td><span class="badge ${PAYB[p.status]}">${PAY[p.status]}</span></td>
@@ -575,7 +574,7 @@
             p.status === 'approved' && p.method !== 'demo' && Number(p.amount) > 0
               ? `<a class="btn btn-sm" href="/api/admin/payments/${p.id}/recibo" target="_blank" title="Comprobante de pago">🧾 Comprobante</a>`
               : p.status === 'pending'
-              ? `<button class="btn btn-sm" data-approve="${p.id}" title="Confirmar pago">✅ Confirmar</button> <button class="btn btn-sm" data-reject="${p.id}" title="Rechazar">🚫</button>${p.method === 'mercadopago' ? ` <button class="btn btn-sm" data-sync="${p.id}" title="Consultar a Mercado Pago">🔄</button>` : ''}`
+              ? `<button class="btn btn-sm" data-approve="${p.id}" title="Confirmar pago">✅ Confirmar</button> <button class="btn btn-sm" data-reject="${p.id}" title="Rechazar">🚫</button>`
               : ''
           }</td></tr>`,
                 )
@@ -597,11 +596,6 @@
       const note = prompt('Motivo (se muestra al anunciante):', 'No recibimos la transferencia');
       if (note === null) return;
       await api(`/api/admin/payments/${b.dataset.reject}/reject`, { method: 'POST', json: { note } });
-      route();
-    }));
-    $$('[data-sync]').forEach((b) => b.addEventListener('click', async () => {
-      const r = await api(`/api/admin/payments/${b.dataset.sync}/sync`, { method: 'POST' });
-      toast(`Estado: ${PAY[r.status]}`);
       route();
     }));
   }

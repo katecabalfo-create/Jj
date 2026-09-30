@@ -339,10 +339,9 @@ function createAccountRouter(db, { handleUpload, prepareImages, discardUploads, 
     res.json(rows.map(publicPayment));
   });
 
-  r.get('/payments/:id', needUser, async (req, res) => {
-    let pay = db.prepare('SELECT * FROM payments WHERE id = ? AND user_id = ?').get(Number(req.params.id), req.user.id);
+  r.get('/payments/:id', needUser, (req, res) => {
+    const pay = db.prepare('SELECT * FROM payments WHERE id = ? AND user_id = ?').get(Number(req.params.id), req.user.id);
     if (!pay) return res.status(404).json({ error: 'Pago no encontrado' });
-    pay = await payments.syncPayment(db, pay, baseUrl(req));
     const listing = pay.listing_id ? db.prepare('SELECT id, title, status, expires_at, payment_status FROM listings WHERE id = ?').get(pay.listing_id) : null;
     res.json({ ...publicPayment(pay), listing, transfer: pay.method === 'transfer' ? payments.transferDetails(db, pay.currency) : undefined });
   });
@@ -413,7 +412,7 @@ function escapeHtml(v) {
   return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
-const METHOD_NAMES = { mercadopago: 'Mercado Pago', transfer: 'Transferencia bancaria', free: 'Sin cargo', demo: 'Prueba' };
+const METHOD_NAMES = { transfer: 'Transferencia bancaria', free: 'Sin cargo', demo: 'Prueba' };
 
 function renderReceipt(db, pay) {
   const s = getSettings(db);
@@ -441,7 +440,6 @@ function renderReceipt(db, pay) {
     ${row('Dirección', pay.invoice_address)}
     ${row('Concepto', pay.description)}
     ${row('Medio de pago', METHOD_NAMES[pay.method] || pay.method)}
-    ${row('Referencia', pay.provider_payment_id ? `Mercado Pago ${pay.provider_payment_id}` : '')}
     <tr><th>Total</th><td class="total">${e(money)}</td></tr>
   </table>
   <p class="note">Este comprobante acredita el pago del servicio de publicación.</p>

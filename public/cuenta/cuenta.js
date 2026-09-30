@@ -12,7 +12,6 @@
   let USER = null;
 
   const METHOD_LABEL = {
-    mercadopago: '💳 Mercado Pago (tarjeta de crédito/débito, Abitab, Redpagos)',
     transfer: '🏦 Transferencia bancaria Itaú (desde Itaú o cualquier banco)',
     demo: '🧪 Pago de prueba (modo demo)',
     free: 'Gratis',
@@ -589,7 +588,6 @@
           <div class="methods">${p.methods.length ? p.methods.map((m, i) => `<label class="method" data-method="${m}"><input type="radio" name="method" value="${m}" ${i === 0 ? 'checked' : ''}> <span>${m === 'transfer' ? esc(METHOD_LABEL.transfer.replace('Itaú', (p.transfer.UYU || p.transfer.USD || {}).bank || 'Itaú')) : METHOD_LABEL[m]}</span></label>`).join('') : '<div class="notice warn">No hay medios de pago configurados todavía. Contactanos.</div>'}</div>`}
           <button class="btn btn-primary" style="width:100%" ${!allFree && !p.methods.length ? 'disabled' : ''}>Continuar</button>
         </form>
-        <p class="muted" style="font-size:.85rem;text-align:center">Los pagos con tarjeta se procesan en el sitio seguro de Mercado Pago. No guardamos datos de tarjetas.</p>
       </div>`;
     // La transferencia solo se ofrece si hay cuenta en la moneda del plan elegido.
     const syncMethods = () => {
@@ -613,10 +611,6 @@
       btn.textContent = 'Procesando…';
       try {
         const pay = await api(`/api/account/listings/${l.id}/checkout`, { method: 'POST', json: { plan_id: Number(fd.get('plan_id')), method: fd.get('method') } });
-        if (pay.method === 'mercadopago' && pay.checkout_url) {
-          location.href = pay.checkout_url;
-          return;
-        }
         location.hash = `#/pagos/${pay.id}`;
       } catch (err) {
         toast(err.message);
@@ -638,7 +632,7 @@
         .join('')}</tbody></table></div>` : '<div class="empty"><p>Todavía no hiciste pagos.</p></div>'}`;
   }
 
-  async function paymentView(id, attempt = 0) {
+  async function paymentView(id) {
     const p = await api(`/api/account/payments/${id}`);
     const { parts } = parseHash();
     if (parts[0] !== 'pagos' || parts[1] !== String(id)) return; // el usuario navegó a otra vista
@@ -677,8 +671,8 @@
         <p style="margin-top:14px"><button class="btn btn-danger btn-sm" id="cancel-pay">Cancelar este pago</button> <a class="btn btn-sm" href="#/avisos">Mis avisos</a></p>`;
     } else if (p.status === 'pending') {
       body = `<div class="big">⏳</div><h1>Esperando la confirmación del pago</h1>
-        <p>Si ya pagaste en Mercado Pago, en unos segundos se actualiza. Si pagaste en Abitab o Redpagos puede demorar unas horas.</p>
-        <p style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${p.checkout_url ? `<a class="btn btn-primary" href="${esc(p.checkout_url)}">Ir a pagar</a>` : ''}<button class="btn" id="refresh">Actualizar</button><a class="btn" href="#/avisos">Mis avisos</a></p>`;
+        <p>Te avisamos por email cuando lo confirmemos.</p>
+        <p style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn" id="refresh">Actualizar</button><a class="btn" href="#/avisos">Mis avisos</a></p>`;
     } else {
       body = `<div class="big">⚠️</div><h1>Pago ${PAY_STATUS[p.status].toLowerCase()}</h1><p>${esc(p.note || 'El pago no se completó.')}</p>
         ${p.listing ? `<a class="btn btn-primary" href="#/avisos/${p.listing.id}/pagar">Intentar de nuevo</a>` : ''}`;
@@ -727,8 +721,6 @@
       });
     const refresh = $('#refresh');
     if (refresh) refresh.addEventListener('click', () => paymentView(id));
-    // Al volver de Mercado Pago, se consulta el estado unas veces automáticamente.
-    if (p.status === 'pending' && p.method === 'mercadopago' && attempt < 6) setTimeout(() => paymentView(id, attempt + 1), 5000);
   }
 
   async function listingStatsView(id) {

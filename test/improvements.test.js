@@ -9,7 +9,6 @@ const path = require('node:path');
 process.env.ADMIN_PASSWORD = 'secreto';
 process.env.SESSION_SECRET = 'test-secret';
 process.env.PAYMENTS_DEMO = '1';
-delete process.env.MP_ACCESS_TOKEN;
 
 let server;
 let base;
