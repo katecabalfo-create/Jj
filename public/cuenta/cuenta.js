@@ -67,7 +67,11 @@
   };
   const cat = (id) => META.categories.find((c) => c.id === id) || { label: id, icon: '📌', locations: [], subtypes: [] };
   const type = (id) => META.accountTypes.find((t) => t.id === id);
-  const today = () => new Date().toISOString().slice(0, 10);
+  // Vencimiento en milisegundos: una fecha sola vale hasta el final de ese día; los planes pagos guardan fecha y hora exactas.
+  const expiryMs = (s) => (!s ? 0 : Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T23:59:59.999Z` : s));
+  const isExpired = (s) => Boolean(s) && expiryMs(s) <= Date.now();
+  const durationLabel = (days) =>
+    days === 1 ? '24 horas' : days % 7 === 0 && days < 28 ? `${days / 7} ${days === 7 ? 'semana' : 'semanas'}` : days === 30 ? '1 mes' : `${days} días`;
 
   function parseHash() {
     const raw = location.hash.replace(/^#/, '') || '/';
@@ -98,7 +102,7 @@
   function listingState(l) {
     if (l.payment_status === 'unpaid') return ['unpaid', 'Falta pagar'];
     if (l.status === 'rejected') return ['rejected', 'Rechazado'];
-    if (l.expires_at && l.expires_at.slice(0, 10) < today()) return ['expired', 'Vencido'];
+    if (isExpired(l.expires_at)) return ['expired', 'Vencido'];
     if (l.paused) return ['paused', 'Pausado'];
     if (l.status === 'pending') return ['pending', 'En revisión'];
     return ['approved', 'Publicado'];
@@ -385,7 +389,7 @@
       <div>
         <h3>${l.featured ? '★ ' : ''}${esc(l.title)}</h3>
         <div class="card-meta"><span class="badge badge-${st}">${label}</span><span>${esc(c.label)}</span>
-          ${l.expires_at ? `<span>Vence ${fmtDate(l.expires_at.slice(0, 10))}</span>` : ''}<span>👁️ ${l.views}</span></div>
+          ${l.expires_at ? `<span>Vence ${fmtDate(l.expires_at)}</span>` : ''}<span>👁️ ${l.views}</span></div>
       </div>
       <div class="actions">
         ${canPay ? `<a class="btn btn-sm ${st === 'unpaid' || st === 'expired' ? 'btn-primary' : ''}" href="#/avisos/${l.id}/pagar">${st === 'unpaid' ? '💳 Pagar y publicar' : '🔁 Renovar'}</a>` : ''}
@@ -572,7 +576,7 @@
     view.innerHTML = `
       <div class="form-page">
         <h1>${st === 'unpaid' ? '💳 Elegí tu plan y publicá' : '🔁 Renovar aviso'}</h1>
-        ${st === 'unpaid' ? '<div class="steps-note"><strong>Paso 2 de 2:</strong> elegí el plan y el medio de pago. Tu aviso se publica apenas se confirma el pago.</div>' : `<div class="steps-note">Los días que compres se suman a partir del ${l.expires_at && l.expires_at.slice(0, 10) >= today() ? `vencimiento actual (${fmtDate(l.expires_at.slice(0, 10))})` : 'día de hoy'}.</div>`}
+        ${st === 'unpaid' ? '<div class="steps-note"><strong>Paso 2 de 2:</strong> elegí el plan y el medio de pago. Tu aviso se publica apenas se confirma el pago.</div>' : `<div class="steps-note">El tiempo que compres se suma a partir del ${l.expires_at && !isExpired(l.expires_at) ? `vencimiento actual (${fmtDate(l.expires_at)})` : 'momento en que se confirme el pago'}. Cuando termina, el aviso se da de baja solo.</div>`}
         <div class="panel" style="margin-bottom:14px"><strong>${esc(l.title)}</strong><div class="muted">${esc(cat(l.category).label)}</div></div>
         <form id="pay" novalidate>
           <div class="plans">${p.plans
@@ -581,7 +585,7 @@
               <strong>${x.featured ? '★ ' : ''}${esc(x.name)}</strong>
               <span class="amount">${money(x.price, x.currency)}</span>
               <span class="muted">${esc(x.description)}</span>
-              <span class="muted" style="font-size:.85rem">${x.duration_days} días de publicación</span></span></label>`,
+              <span class="muted" style="font-size:.85rem">${durationLabel(x.duration_days)} de publicación</span></span></label>`,
             )
             .join('')}</div>
           ${allFree ? '' : `<h2 style="margin-top:18px">Medio de pago</h2>
@@ -639,7 +643,7 @@
     let body = '';
     if (p.status === 'approved') {
       body = `<div class="big">✅</div><h1>¡Pago confirmado!</h1>
-        <p>${p.listing ? (p.listing.status === 'approved' ? `Tu aviso está publicado hasta el ${fmtDate((p.listing.expires_at || '').slice(0, 10))}.` : 'Tu aviso quedó en revisión y se publicará en breve.') : ''}</p>
+        <p>${p.listing ? (p.listing.status === 'approved' ? `Tu aviso está publicado hasta el ${fmtDate(p.listing.expires_at)}.` : 'Tu aviso quedó en revisión y se publicará en breve.') : ''}</p>
         <p style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${p.listing && p.listing.status === 'approved' ? `<a class="btn btn-primary" href="/#/aviso/${p.listing.id}" target="_blank">Ver mi aviso</a>` : ''}
           ${Number(p.amount) > 0 && p.method !== 'demo' ? `<a class="btn" href="/api/account/payments/${p.id}/recibo" target="_blank">🧾 Comprobante</a>` : ''}<a class="btn" href="#/avisos">Mis avisos</a></p>`;
     } else if (p.status === 'pending' && p.method === 'transfer') {

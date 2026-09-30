@@ -2,7 +2,7 @@
 
 const { getSettings } = require('./db');
 const { updateListing } = require('./listings');
-const { notifyNewListing, enqueueEmail } = require('./notify');
+const { notifyNewListing, enqueueEmail, formatExpiry } = require('./notify');
 
 const demoEnabled = () => process.env.PAYMENTS_DEMO === '1';
 
@@ -12,6 +12,15 @@ function availableMethods(db) {
   if (s.payments_transfer_enabled === '1' && (s.transfer_account_uyu || s.transfer_account_usd)) m.push('transfer');
   if (demoEnabled()) m.push('demo');
   return m;
+}
+
+const DAY_MS = 86400000;
+
+/** Vencimiento en milisegundos; una fecha sin hora vale hasta el final de ese día. 0 si no hay. */
+function expiryMs(value) {
+  if (!value) return 0;
+  const ms = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T23:59:59.999Z` : value);
+  return Number.isNaN(ms) ? 0 : ms;
 }
 
 function addDays(fromYmd, days) {
@@ -38,15 +47,22 @@ function applyPayment(db, paymentId, { providerPaymentId = '', note = '' } = {},
   const pay = db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId);
   const listing = pay.listing_id ? db.prepare('SELECT * FROM listings WHERE id = ?').get(pay.listing_id) : null;
   if (listing) {
-    const today = new Date().toISOString().slice(0, 10);
-    const from = listing.expires_at && listing.expires_at > today ? listing.expires_at.slice(0, 10) : today;
+    // El tiempo pagado corre desde ahora, o desde el vencimiento actual si el aviso sigue vigente (renovación).
+    const now = Date.now();
+    const current = expiryMs(listing.expires_at);
+    const expiresAt = new Date(Math.max(now, current || 0) + pay.duration_days * DAY_MS).toISOString();
     const s = getSettings(db);
     const patch = {
       payment_status: 'paid',
       plan_id: pay.plan_id,
-      expires_at: addDays(from, pay.duration_days),
+      expires_at: expiresAt,
     };
-    if (pay.featured) patch.featured = 1;
+    // El destacado dura lo que se pagó: si el aviso ya estaba destacado se extiende; si no, empieza ahora.
+    if (pay.featured) {
+      const featuredFrom = listing.featured && listing.featured_until ? Math.max(now, expiryMs(listing.featured_until)) : now;
+      patch.featured = 1;
+      patch.featured_until = new Date(featuredFrom + pay.duration_days * DAY_MS).toISOString();
+    }
     if (listing.status !== 'rejected') {
       patch.status = s.moderation_accounts === '1' && listing.status !== 'approved' ? 'pending' : 'approved';
       if (patch.status === 'approved' && !listing.published_at) patch.published_at = new Date().toISOString();
@@ -61,7 +77,7 @@ function applyPayment(db, paymentId, { providerPaymentId = '', note = '' } = {},
       user.email,
       `Pago confirmado #${pay.id}`,
       `Hola ${user.name}, confirmamos tu pago de ${pay.currency === 'USD' ? 'US$' : '$'} ${pay.amount} (${pay.description}).\n` +
-        (listing ? `Tu aviso "${listing.title}" está activo hasta el ${db.prepare('SELECT expires_at FROM listings WHERE id = ?').get(listing.id).expires_at}.\n` : '') +
+        (listing ? `Tu aviso "${listing.title}" está activo hasta el ${formatExpiry(db.prepare('SELECT expires_at FROM listings WHERE id = ?').get(listing.id).expires_at)}.\n` : '') +
         `Comprobante de pago: ${baseUrl}/cuenta/#/pagos/${pay.id}\nVer tu panel: ${baseUrl}/cuenta/`,
     );
   }
@@ -86,6 +102,26 @@ function transferDetails(db, currency) {
 }
 
 /** Crea el pago. La transferencia queda pendiente hasta que el administrador la confirma. */
+/** Avisa al administrador (email de contacto) que un anunciante eligió renovar un aviso. */
+function notifyRenewal(db, { user, listing, plan, method, paymentId, baseUrl }) {
+  const to = getSettings(db).contact_email;
+  if (!to) return;
+  const current = expiryMs(listing.expires_at);
+  const state = current > Date.now() ? `vigente hasta el ${formatExpiry(listing.expires_at)}` : listing.expires_at ? `vencido el ${formatExpiry(listing.expires_at)}` : 'sin vencimiento';
+  const money = `${plan.currency === 'USD' ? 'US$' : '$'} ${Number(plan.price).toLocaleString('es-UY')}`;
+  const next = method === 'transfer' ? `Cuando llegue la transferencia, confirmala en Pagos: ${baseUrl}/admin/#/pagos?status=pending&method=transfer` : `Pago #${paymentId}: ${baseUrl}/admin/#/pagos`;
+  enqueueEmail(
+    db,
+    to,
+    `Renovación: ${listing.title}`,
+    `${user.business_name || user.name} (${user.email}) eligió renovar su aviso "${listing.title}".
+` +
+      `Plan: ${plan.name} — ${money}
+El aviso está ${state}.
+${next}`,
+  );
+}
+
 async function createCheckout(db, { user, listing, plan, method, baseUrl }) {
   const free = Number(plan.price) === 0;
   const m = free ? 'free' : method;
@@ -95,18 +131,21 @@ async function createCheckout(db, { user, listing, plan, method, baseUrl }) {
   }
 
   const description = `${plan.name} — ${listing.title}`.slice(0, 250);
+  // Es una renovación si el aviso ya estaba pago (vigente o vencido).
+  const renewal = listing.payment_status === 'paid' ? 1 : 0;
   const id = Number(
     db
       .prepare(
-        `INSERT INTO payments (user_id, listing_id, plan_id, description, amount, currency, duration_days, featured, method, invoice_name, invoice_rut, invoice_address)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO payments (user_id, listing_id, plan_id, description, amount, currency, duration_days, featured, method, renewal, invoice_name, invoice_rut, invoice_address)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        user.id, listing.id, plan.id, description, plan.price, plan.currency, plan.duration_days, plan.featured, m,
+        user.id, listing.id, plan.id, description, plan.price, plan.currency, plan.duration_days, plan.featured, m, renewal,
         user.business_name || user.name, user.rut || '', user.billing_address || '',
       ).lastInsertRowid,
   );
   if (listing.payment_status !== 'paid') updateListing(db, listing.id, { payment_status: 'unpaid' });
+  if (renewal) notifyRenewal(db, { user, listing, plan, method: m, paymentId: id, baseUrl });
 
   if (m === 'free' || m === 'demo') {
     applyPayment(db, id, { note: m === 'demo' ? 'Pago de prueba (modo demo)' : 'Plan gratuito' }, baseUrl);

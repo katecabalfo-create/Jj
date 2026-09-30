@@ -6,6 +6,7 @@ const express = require('express');
 const { ACCOUNT_TYPE_IDS, getAccountType } = require('./categories');
 const { getSettings } = require('./db');
 const { enqueueEmail } = require('./notify');
+const { IS_VIGENTE, IS_VENCIDO } = require('./listings');
 
 const ACTIVITIES = {
   active: 'Con avisos publicados',
@@ -18,8 +19,8 @@ const ACTIVITIES = {
 
 // Subconsultas reutilizadas en filtros y listados
 const ACTIVE_SQL = `(SELECT COUNT(*) FROM listings l WHERE l.user_id = u.id AND l.status = 'approved' AND l.paused = 0
-  AND l.payment_status <> 'unpaid' AND (l.expires_at IS NULL OR l.expires_at = '' OR l.expires_at >= date('now')))`;
-const EXPIRED_SQL = `(SELECT COUNT(*) FROM listings l WHERE l.user_id = u.id AND l.expires_at IS NOT NULL AND l.expires_at <> '' AND l.expires_at < date('now'))`;
+  AND l.payment_status <> 'unpaid' AND ${IS_VIGENTE()})`;
+const EXPIRED_SQL = `(SELECT COUNT(*) FROM listings l WHERE l.user_id = u.id AND ${IS_VENCIDO()})`;
 const UNPAID_SQL = `(SELECT COUNT(*) FROM listings l WHERE l.user_id = u.id AND l.payment_status = 'unpaid')`;
 const PAID_SQL = `(SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE p.user_id = u.id AND p.status = 'approved' AND p.method NOT IN ('demo','free'))`;
 const PAYCOUNT_SQL = `(SELECT COUNT(*) FROM payments p WHERE p.user_id = u.id AND p.status = 'approved' AND p.method NOT IN ('demo','free'))`;

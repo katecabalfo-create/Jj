@@ -410,7 +410,7 @@
         <fieldset><legend>Sitio</legend>
           <div class="field"><label>Nombre del sitio</label><input name="site_name" value="${esc(s.site_name)}"></div>
           <div class="field"><label>Descripción</label><input name="site_tagline" value="${esc(s.site_tagline)}"></div>
-          <div class="field"><label>Email de contacto / administración</label><input name="contact_email" type="email" value="${esc(s.contact_email)}"><small>Recibe un aviso por cada publicación nueva y aparece en la página de privacidad.</small></div>
+          <div class="field"><label>Email de contacto / administración</label><input name="contact_email" type="email" value="${esc(s.contact_email)}"><small>Recibe un aviso por cada publicación nueva y cada vez que un anunciante renueva un aviso. Aparece en la página de privacidad.</small></div>
           <div class="field"><label>Avisos por página</label><input name="page_size" type="number" min="3" max="50" value="${esc(s.page_size)}"></div>
           <label class="check"><input type="checkbox" name="moderation" value="1" ${s.moderation === '1' ? 'checked' : ''}> Revisar los avisos anónimos (sin cuenta) antes de publicarlos</label>
         </fieldset>
@@ -565,7 +565,7 @@
                   (p) => `<tr>
           <td>${p.id}</td>
           <td><a href="#/usuarios?id=${p.user_id}">${esc(p.business_name || p.name)}</a><div class="muted" style="font-size:.8rem">${esc(p.email)}</div></td>
-          <td>${esc(p.description)}${p.listing_id ? ` <a href="#/avisos/${p.listing_id}" style="font-size:.8rem">(aviso #${p.listing_id})</a>` : ''}${p.note ? `<div class="muted" style="font-size:.8rem">${esc(p.note)}</div>` : ''}${p.receipt_file ? `<div style="font-size:.85rem;margin-top:4px"><a href="/api/admin/payments/${p.id}/receipt" target="_blank">📎 Ver comprobante</a> <span class="muted">(${fmtDate(p.receipt_at)})</span></div>` : p.method === 'transfer' && p.status === 'pending' ? '<div class="muted" style="font-size:.8rem">Sin comprobante todavía</div>' : ''}${p.payer_note ? `<div class="muted" style="font-size:.8rem">💬 ${esc(p.payer_note)}</div>` : ''}</td>
+          <td>${p.renewal ? '<span class="badge">🔁 Renovación</span> ' : ''}${esc(p.description)}${p.listing_id ? ` <a href="#/avisos/${p.listing_id}" style="font-size:.8rem">(aviso #${p.listing_id})</a>` : ''}${p.note ? `<div class="muted" style="font-size:.8rem">${esc(p.note)}</div>` : ''}${p.receipt_file ? `<div style="font-size:.85rem;margin-top:4px"><a href="/api/admin/payments/${p.id}/receipt" target="_blank">📎 Ver comprobante</a> <span class="muted">(${fmtDate(p.receipt_at)})</span></div>` : p.method === 'transfer' && p.status === 'pending' ? '<div class="muted" style="font-size:.8rem">Sin comprobante todavía</div>' : ''}${p.payer_note ? `<div class="muted" style="font-size:.8rem">💬 ${esc(p.payer_note)}</div>` : ''}</td>
           <td style="white-space:nowrap"><strong>${money(p.amount, p.currency)}</strong></td>
           <td>${METHOD[p.method]}</td>
           <td><span class="badge ${PAYB[p.status]}">${PAY[p.status]}</span></td>

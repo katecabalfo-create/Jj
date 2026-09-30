@@ -8,7 +8,7 @@ const multer = require('multer');
 
 const { ACCOUNT_TYPE_IDS, getAccountType, getCategory } = require('./categories');
 const { getSettings } = require('./db');
-const { searchListings, validateListing, insertListing, updateListing } = require('./listings');
+const { searchListings, validateListing, insertListing, updateListing, IS_VIGENTE, IS_VENCIDO } = require('./listings');
 const { enqueueEmail, smtpConfigured } = require('./notify');
 const payments = require('./payments');
 const auth = require('./auth');
@@ -218,16 +218,17 @@ function createAccountRouter(db, { handleUpload, prepareImages, discardUploads, 
     const today = new Date().toISOString().slice(0, 10);
     const q = (sql, ...a) => db.prepare(sql).get(uid, ...a);
     res.json({
-      active: q(`SELECT COUNT(*) n FROM listings WHERE user_id = ? AND status = 'approved' AND paused = 0 AND payment_status <> 'unpaid' AND (expires_at IS NULL OR expires_at >= ?)`, today).n,
+      active: q(`SELECT COUNT(*) n FROM listings WHERE user_id = ? AND status = 'approved' AND paused = 0 AND payment_status <> 'unpaid' AND ${IS_VIGENTE('expires_at')}`).n,
       unpaid: q("SELECT COUNT(*) n FROM listings WHERE user_id = ? AND payment_status = 'unpaid'").n,
       pending: q("SELECT COUNT(*) n FROM listings WHERE user_id = ? AND status = 'pending' AND payment_status <> 'unpaid'").n,
-      expired: q("SELECT COUNT(*) n FROM listings WHERE user_id = ? AND expires_at IS NOT NULL AND expires_at <> '' AND expires_at < ?", today).n,
+      expired: q(`SELECT COUNT(*) n FROM listings WHERE user_id = ? AND ${IS_VENCIDO('expires_at')}`).n,
       views: q('SELECT COALESCE(SUM(views),0) n FROM listings WHERE user_id = ?').n,
       spent: db.prepare("SELECT currency, SUM(amount) total FROM payments WHERE user_id = ? AND status = 'approved' GROUP BY currency").all(uid),
       daily: dailyViews(db, 'l.user_id = ?', uid),
       expiringSoon: db
-        .prepare("SELECT id, title, expires_at FROM listings WHERE user_id = ? AND status = 'approved' AND expires_at BETWEEN ? AND date(?, '+5 days') ORDER BY expires_at")
-        .all(uid, today, today),
+        .prepare(`SELECT id, title, expires_at FROM listings WHERE user_id = ? AND status = 'approved' AND ${IS_VIGENTE('expires_at')}
+          AND substr(expires_at, 1, 10) <= date(?, '+5 days') ORDER BY expires_at`)
+        .all(uid, today),
     });
   });
 

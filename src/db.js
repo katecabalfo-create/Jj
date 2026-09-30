@@ -41,14 +41,27 @@ const DEFAULT_SETTINGS = {
 };
 
 // Planes iniciales (se editan desde el panel de administración).
-const DEFAULT_PLANS = [
-  ['empresa', 'Aviso 30 días', 'Publicación de empleo, aviso o evento durante 30 días.', 490, 30, 0],
-  ['empresa', 'Aviso destacado 30 días', 'Aparece primero en su sección y en la portada, con distintivo de destacado.', 990, 30, 1],
-  ['servicios', 'Servicio 30 días', 'Publicá tu servicio durante 30 días.', 290, 30, 0],
-  ['servicios', 'Servicio destacado 30 días', 'Tu servicio primero en la sección, con distintivo de destacado.', 590, 30, 1],
-  ['alquileres', 'Alquiler 30 días', 'Publicá tu propiedad durante 30 días.', 390, 30, 0],
-  ['alquileres', 'Alquiler destacado 30 días', 'Tu propiedad primero en Alquileres, con distintivo de destacado.', 790, 30, 1],
+// Planes de publicación en la web (precios en pesos). Cada plan tiene su versión destacada, que cuesta un 20% más.
+// El aviso queda visible exactamente el tiempo pagado y después se da de baja solo.
+const PLAN_LIST = [
+  ['Individual – solo historias', 1250, 1, '24 horas'],
+  ['Individual completa', 1900, 1, '24 horas'],
+  ['Plan Impulso – 1 semana', 3900, 7, '1 semana'],
+  ['Plan Impulso – 2 semanas', 6900, 14, '2 semanas'],
+  ['Plan Alcance – 1 semana', 5900, 7, '1 semana'],
+  ['Plan Alcance – 2 semanas', 10500, 14, '2 semanas'],
+  ['Plan Presencia Total – 2 semanas', 13900, 14, '2 semanas'],
+  ['Plan Presencia Total – 1 mes', 24900, 30, '1 mes'],
 ];
+const FEATURED_SURCHARGE = 1.2;
+const DEFAULT_PLANS = ['empresa', 'servicios', 'alquileres'].flatMap((type) =>
+  PLAN_LIST.flatMap(([name, price, days, span]) => [
+    [type, name, `Tu aviso visible durante ${span}.`, price, days, 0],
+    [type, `${name} (destacado)`, `Tu aviso visible durante ${span}, primero en su sección y en la portada, con distintivo de destacado.`, Math.round(price * FEATURED_SURCHARGE), days, 1],
+  ]),
+);
+// Planes que venían por defecto antes; si la base todavía tiene solo esos, se reemplazan por los nuevos.
+const OLD_DEFAULT_PLAN_NAMES = ['Aviso 30 días', 'Aviso destacado 30 días', 'Servicio 30 días', 'Servicio destacado 30 días', 'Alquiler 30 días', 'Alquiler destacado 30 días'];
 
 function openDb(file) {
   const dbFile = file || process.env.DB_FILE || path.join(__dirname, '..', 'data', 'maldonado.db');
@@ -255,6 +268,11 @@ function migrate(db) {
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_listings_user ON listings(user_id)');
 
+  addColumn(db, 'listings', 'featured_until', 'TEXT');
+  addColumn(db, 'payments', 'renewal', 'INTEGER NOT NULL DEFAULT 0');
+
+  const planNames = db.prepare('SELECT name FROM plans').all().map((p) => p.name);
+  if (planNames.length && planNames.every((n) => OLD_DEFAULT_PLAN_NAMES.includes(n))) db.exec('DELETE FROM plans');
   if (db.prepare('SELECT COUNT(*) n FROM plans').get().n === 0) {
     const ins = db.prepare('INSERT INTO plans (account_type, name, description, price, duration_days, featured, sort) VALUES (?, ?, ?, ?, ?, ?, ?)');
     DEFAULT_PLANS.forEach((p, i) => ins.run(...p, i));

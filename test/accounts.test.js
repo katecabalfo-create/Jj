@@ -11,6 +11,11 @@ process.env.SESSION_SECRET = 'test-secret';
 process.env.PAYMENTS_DEMO = '1';
 
 let server;
+
+/** El vencimiento guardado cae dentro del minuto esperado. */
+function assertNear(iso, expectedMs) {
+  assert.ok(Math.abs(Date.parse(iso) - expectedMs) < 60000, `${iso} debería ser ${new Date(expectedMs).toISOString()}`);
+}
 let base;
 
 function client() {
@@ -152,8 +157,7 @@ test('empresa: aviso sin pagar no se publica; transferencia confirmada por admin
   assert.equal(pub.json.advertiser.name, 'Logística del Este');
   const l = db.prepare('SELECT * FROM listings WHERE id = ?').get(id);
   assert.equal(l.payment_status, 'paid');
-  const expected = new Date(Date.now() + plan.duration_days * 86400000).toISOString().slice(0, 10);
-  assert.equal(l.expires_at, expected);
+  assertNear(l.expires_at, Date.now() + plan.duration_days * 86400000);
 
   // Pausar lo oculta
   await req('POST', `/api/account/listings/${id}/pause`, { paused: true });
@@ -201,8 +205,7 @@ test('modo demo y renovación suman días', async () => {
   assert.equal(p1.json.status, 'approved');
   await req('POST', `/api/account/listings/${created.json.id}/checkout`, { plan_id: plan.id, method: 'demo' });
   const l = db.prepare('SELECT expires_at FROM listings WHERE id = ?').get(created.json.id);
-  const expected = new Date(Date.now() + 2 * plan.duration_days * 86400000).toISOString().slice(0, 10);
-  assert.equal(l.expires_at, expected);
+  assertNear(l.expires_at, Date.now() + 2 * plan.duration_days * 86400000);
   const adv = await client()('GET', `/api/advertisers/${created.json.user_id}`);
   assert.equal(adv.json.listings.total, 1);
 });
@@ -223,4 +226,87 @@ test('publicar sin cuenta está desactivado por defecto', async () => {
   const fd = listingForm();
   fd.set('accept_terms', 'on');
   assert.equal((await client()('POST', '/api/listings', fd)).status, 403);
+});
+
+test('planes por semanas con destacado +20% y baja automática al terminar el tiempo pagado', async () => {
+  const { expireFeatured } = require('../src/listings');
+  const req = client();
+  const reg = await req('POST', '/api/account/register', { type: 'empresa', name: 'Sofía', business_name: 'Parador del Este', email: 'sofia@example.com', password: 'clave1234', accept_terms: true });
+  assert.equal(reg.status, 201, JSON.stringify(reg.json));
+  const plansRes = await req('GET', '/api/account/plans');
+  assert.equal(plansRes.status, 200, JSON.stringify(plansRes.json));
+  const plans = plansRes.json.plans;
+  const byName = Object.fromEntries(plans.map((p) => [p.name, p]));
+  assert.equal(byName['Plan Impulso – 1 semana'].price, 3900);
+  assert.equal(byName['Plan Impulso – 1 semana'].duration_days, 7);
+  assert.equal(byName['Plan Impulso – 1 semana (destacado)'].price, 4680);
+  assert.equal(byName['Plan Presencia Total – 1 mes'].price, 24900);
+  assert.equal(byName['Plan Presencia Total – 1 mes (destacado)'].price, 29880);
+  assert.equal(byName['Individual – solo historias'].duration_days, 1);
+  for (const p of plans.filter((x) => x.featured)) {
+    const base = byName[p.name.replace(' (destacado)', '')];
+    assert.equal(p.price, Math.round(base.price * 1.2), p.name);
+    assert.equal(p.duration_days, base.duration_days);
+  }
+
+  const created = await req('POST', '/api/account/listings', listingForm({ category: 'empleo-maldonado', title: 'Cocinero para temporada' }));
+  const id = created.json.id;
+  const plan = byName['Plan Alcance – 1 semana (destacado)'];
+  const pay = await req('POST', `/api/account/listings/${id}/checkout`, { plan_id: plan.id, method: 'demo' });
+  assert.equal(pay.json.status, 'approved');
+  let l = db.prepare('SELECT * FROM listings WHERE id = ?').get(id);
+  assertNear(l.expires_at, Date.now() + 7 * 86400000);
+  assert.equal(l.featured, 1);
+  assertNear(l.featured_until, Date.now() + 7 * 86400000);
+  assert.equal((await client()('GET', `/api/listings/${id}`)).status, 200);
+
+  // Un minuto después del vencimiento el aviso ya no se muestra y pierde el destacado
+  const past = new Date(Date.now() - 60000).toISOString();
+  db.prepare('UPDATE listings SET expires_at = ?, featured_until = ? WHERE id = ?').run(past, past, id);
+  assert.equal((await client()('GET', `/api/listings/${id}`)).status, 404);
+  assert.equal(expireFeatured(db) >= 1, true);
+  l = db.prepare('SELECT featured, featured_until FROM listings WHERE id = ?').get(id);
+  assert.equal(l.featured, 0);
+  assert.equal(l.featured_until, null);
+  const stats = (await req('GET', '/api/account/stats')).json;
+  assert.equal(stats.expired, 1);
+  assert.equal(stats.active, 0);
+
+  // Renovar con un plan común lo vuelve a publicar desde ahora, sin destacado
+  await req('POST', `/api/account/listings/${id}/checkout`, { plan_id: byName['Plan Impulso – 2 semanas'].id, method: 'demo' });
+  l = db.prepare('SELECT * FROM listings WHERE id = ?').get(id);
+  assertNear(l.expires_at, Date.now() + 14 * 86400000);
+  assert.equal(l.featured, 0);
+  assert.equal((await client()('GET', `/api/listings/${id}`)).status, 200);
+});
+
+test('renovar un aviso le avisa al administrador por email y se marca en Pagos', async () => {
+  const admin = client();
+  await admin('POST', '/api/admin/login', { password: 'secreto' });
+  await admin('PUT', '/api/admin/settings', { contact_email: 'dueña@maldonado.example' });
+  const req = client();
+  await req('POST', '/api/account/register', { type: 'servicios', name: 'Rita', email: 'rita@example.com', password: 'clave1234', accept_terms: true });
+  const created = await req('POST', '/api/account/listings', listingForm({ category: 'avisos-maldonado', title: 'Limpieza de piscinas' }));
+  const id = created.json.id;
+  const plans = (await req('GET', '/api/account/plans')).json.plans;
+  const plan = plans.find((p) => p.name === 'Plan Impulso – 1 semana');
+  const mails = () => db.prepare("SELECT subject, body FROM outbox WHERE to_email = 'dueña@maldonado.example' AND subject LIKE 'Renovación%'").all();
+
+  // Primera compra: no es renovación
+  const first = await req('POST', `/api/account/listings/${id}/checkout`, { plan_id: plan.id, method: 'demo' });
+  assert.equal(first.json.renewal, 0);
+  assert.equal(mails().length, 0);
+
+  // Renovar: avisa al admin con el plan, el monto y el vencimiento actual
+  const again = await req('POST', `/api/account/listings/${id}/checkout`, { plan_id: plan.id, method: 'transfer' });
+  assert.equal(again.status, 201);
+  assert.equal(again.json.renewal, 1);
+  const sent = mails();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].subject, /Limpieza de piscinas/);
+  assert.match(sent[0].body, /Rita \(rita@example\.com\) eligió renovar/);
+  assert.match(sent[0].body, /Plan Impulso – 1 semana — \$ 3\.900/);
+  assert.match(sent[0].body, /vigente hasta el/);
+  const pays = (await admin('GET', '/api/admin/payments?status=pending')).json;
+  assert.equal(pays.find((p) => p.id === again.json.id).renewal, 1);
 });

@@ -4,6 +4,7 @@ const { openDb } = require('./src/db');
 const { createApp } = require('./src/app');
 const { seedIfEmpty } = require('./src/seed');
 const { buildDigests, flushOutbox, sendExpiryReminders } = require('./src/notify');
+const { expireFeatured } = require('./src/listings');
 const { usingDefaultPassword } = require('./src/auth');
 
 const db = openDb();
@@ -21,8 +22,10 @@ app.listen(port, () => {
 
 // Cada 5 minutos: arma resúmenes diarios/semanales y envía los correos en cola.
 const baseUrl = process.env.BASE_URL || `http://localhost:${port}`;
+expireFeatured(db);
 setInterval(async () => {
   try {
+    expireFeatured(db);
     buildDigests(db, baseUrl);
     sendExpiryReminders(db, baseUrl);
     await flushOutbox(db);
